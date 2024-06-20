@@ -1,5 +1,6 @@
 open! Base
 open Stdlib.Effect
+open Stdlib.Effect.Deep
 open Syntax
 open Domains
 
@@ -125,3 +126,10 @@ let rec eval : type a. a Expr.t -> value = function
       | Minus, Int i1, Int i2 -> Int (i1 - i2)
       | Times, Int i1, Int i2 -> Int (i1 * i2)
       | _, _, _ -> raise Type_error)
+
+let rec eval_mult : type a. a Expr.t -> value =
+ fun expr ->
+  (match eval expr with
+  | v -> ( function Idle | Update -> v | Retry -> eval_mult expr)
+  | effect Set_dec d, k -> fun _d -> continue k () d)
+    Idle
