@@ -1,0 +1,32 @@
+(lang dune 3.15)
+
+(name react_trace)
+
+(generate_opam_files true)
+
+(source
+ (github React-Analysis/ReacttRace))
+
+(authors "Jay Lee")
+
+(maintainers "Jay Lee")
+
+(license LICENSE)
+
+; (documentation https://url/to/documentation)
+
+(package
+ (name react_trace)
+ (synopsis "React Analyzer")
+ (description "ReacttRace is a tool for analyzing React programs.")
+ (depends
+   ocaml
+   dune
+   (ocaml-variants (= 5.1.1+effect-syntax))
+   base
+   logs
+   stdio)
+ (tags
+  (React "Static Analysis")))
+
+; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

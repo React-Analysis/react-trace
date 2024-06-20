@@ -1,0 +1,3 @@
+profile = default
+version = 0.26.2
+wrap-comments = true
