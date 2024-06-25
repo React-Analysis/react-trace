@@ -1,15 +1,7 @@
 open! Base
 
 module Id = struct
-  module T = String
-  include T
-
-  module Map = struct
-    open Map
-    include M (T)
-
-    let empty = empty (module T)
-  end
+  include Util.Map_key (String)
 
   let unit = "()"
 end
