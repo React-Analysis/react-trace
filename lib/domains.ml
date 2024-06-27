@@ -10,27 +10,25 @@ module rec T : sig
     | Clos of clos
     | Set_clos of set_clos
     | Comp_clos of comp_clos
-    | Comp_thunk of comp_thunk
+    | Comp_spec of comp_spec
 
   and clos = { param : Id.t; body : hook_free Expr.t; env : Env.t }
   and set_clos = { label : Label.t; path : Path.t }
   and comp_clos = { comp : Prog.comp; env : Env.t }
-  and comp_thunk = { comp : Prog.comp; env : Env.t; arg : value }
-  and view_spec = Vs_null | Vs_int of int | Vs_comp of comp_thunk
+  and comp_spec = { comp : Prog.comp; env : Env.t; arg : value }
+  and view_spec = Vs_null | Vs_int of int | Vs_comp of comp_spec
 
   type phase = P_init | P_update | P_retry | P_effect | P_top
   and decision = Idle | Retry | Update
   and st_store = St_store.t
   and job_q = Job_q.t
 
-  and part_view =
-    | Root
-    | Node of {
-        view_spec : view_spec;
-        dec : decision;
-        st_store : St_store.t;
-        eff_q : Job_q.t;
-      }
+  and part_view = {
+    comp_spec : comp_spec;
+    dec : decision;
+    st_store : St_store.t;
+    eff_q : Job_q.t;
+  }
 
   and tree = Leaf_null | Leaf_int of int | Path of Path.t
   and entry = { part_view : part_view; children : tree Snoc_list.t }
@@ -90,41 +88,28 @@ end = struct
 
   let lookup_st tree_mem ~path ~label =
     let { part_view; _ } = Map.find_exn tree_mem path in
-    match part_view with
-    | Root -> failwith "lookup_st: Root"
-    | Node { st_store; _ } -> St_store.lookup st_store ~label
+    St_store.lookup part_view.st_store ~label
 
   let update_st tree_mem ~path ~label (v, q) =
     let ({ part_view; _ } as entry) = Map.find_exn tree_mem path in
-    match part_view with
-    | Root -> failwith "update_st: Root"
-    | Node ({ st_store; _ } as node) ->
-        let st_store = St_store.update st_store ~label ~value:(v, q) in
-        Map.set tree_mem ~key:path
-          ~data:{ entry with part_view = Node { node with st_store } }
+    let st_store = St_store.update part_view.st_store ~label ~value:(v, q) in
+    Map.set tree_mem ~key:path
+      ~data:{ entry with part_view = { part_view with st_store } }
 
   let get_dec tree_mem ~path =
     let { part_view; _ } = Map.find_exn tree_mem path in
-    match part_view with
-    | Root -> failwith "set_dec: Root"
-    | Node { dec; _ } -> dec
+    part_view.dec
 
   let set_dec tree_mem ~path dec =
     let ({ part_view; _ } as entry) = Map.find_exn tree_mem path in
-    match part_view with
-    | Root -> failwith "set_dec: Root"
-    | Node node ->
-        Map.set tree_mem ~key:path
-          ~data:{ entry with part_view = Node { node with dec } }
+    Map.set tree_mem ~key:path
+      ~data:{ entry with part_view = { part_view with dec } }
 
   let enq_eff tree_mem ~path clos =
     let ({ part_view; _ } as entry) = Map.find_exn tree_mem path in
-    match part_view with
-    | Root -> failwith "enq_eff: Root"
-    | Node ({ eff_q; _ } as node) ->
-        let eff_q = Job_q.enqueue eff_q clos in
-        Map.set tree_mem ~key:path
-          ~data:{ entry with part_view = Node { node with eff_q } }
+    let eff_q = Job_q.enqueue part_view.eff_q clos in
+    Map.set tree_mem ~key:path
+      ~data:{ entry with part_view = { part_view with eff_q } }
 
   let alloc_pt = Map.length
   let lookup_ent tree_mem ~path = Map.find_exn tree_mem path
@@ -147,7 +132,7 @@ module Value = struct
   let to_vs = function
     | Unit -> Some Vs_null
     | Int i -> Some (Vs_int i)
-    | Comp_thunk t -> Some (Vs_comp t)
+    | Comp_spec t -> Some (Vs_comp t)
     | _ -> None
 
   let to_vss = function View_spec vss -> Some vss | _ -> None

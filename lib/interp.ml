@@ -95,14 +95,14 @@ let rec eval : type a. a Expr.t -> value = function
       | Clos { param; body; env } ->
           let env = Env.extend env ~id:param ~value:(eval arg) in
           perform (In_env env) eval body
-      | Comp_clos { comp; env } -> Comp_thunk { comp; env; arg = eval arg }
+      | Comp_clos { comp; env } -> Comp_spec { comp; env; arg = eval arg }
       | Set_clos { label; path } ->
           (* Argument to the setter should be a setting thunk *)
           let clos = eval arg |> clos_of_value_exn in
 
           let self_pt = perform Rd_pt in
           let phase = perform Rd_ph in
-          if Phase.(phase = P_top) then raise Invalid_phase;
+          if Phase.(phase = P_top) then assert false;
 
           let dec =
             if Int.(path = self_pt) && Phase.(phase <> P_effect) then Retry
@@ -150,11 +150,11 @@ let rec eval : type a. a Expr.t -> value = function
           perform (In_env env) eval body
       | P_effect | P_top -> raise Invalid_phase)
   | Eff e ->
-      let path = perform Rd_pt in
-      let phase = perform Rd_ph in
+      let path = perform Rd_pt
+      and phase = perform Rd_ph
+      and env = perform Rd_env in
       (match phase with P_effect | P_top -> raise Invalid_phase | _ -> ());
-      perform
-        (Enq_eff (path, { param = Id.unit; body = e; env = perform Rd_env }));
+      perform (Enq_eff (path, { param = Id.unit; body = e; env }));
       Unit
   | Seq (e1, e2) ->
       eval e1 |> ignore;
@@ -173,12 +173,13 @@ let rec eval_mult : type a. a Expr.t -> value =
   let v = eval expr in
   let path = perform Rd_pt in
   match perform (Get_dec path) with
-  | Retry -> eval_mult expr
+  | Retry -> ptph_h eval_mult expr ~ptph:(path, P_retry)
   | Idle | Update -> v
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
   List.iter vss ~f:(fun vs ->
       let t = render1 vs in
+      (* refetch the whole entry, as the children may have updated the parent *)
       let ({ children; _ } as ent) = perform (Lookup_ent path) in
       perform
         (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })))
@@ -186,17 +187,16 @@ let rec render (path : Path.t) (vss : view_spec list) : unit =
 and render1 : view_spec -> tree = function
   | Vs_null -> Leaf_null
   | Vs_int i -> Leaf_int i
-  | Vs_comp { comp = { param; body; _ }; env; arg } as view_spec ->
+  | Vs_comp ({ comp = { param; body; _ }; env; arg } as comp_spec) ->
       let path = perform Alloc_pt
       and env = Env.extend env ~id:param ~value:arg
       and part_view =
-        Node
-          {
-            view_spec;
-            dec = Idle;
-            st_store = St_store.empty;
-            eff_q = Job_q.empty;
-          }
+        {
+          comp_spec;
+          dec = Idle;
+          st_store = St_store.empty;
+          eff_q = Job_q.empty;
+        }
       in
       perform (Update_ent (path, { part_view; children = [] }));
 
@@ -208,13 +208,69 @@ and render1 : view_spec -> tree = function
 
       Path path
 
+let rec update (path : Path.t) : unit =
+  let {
+    part_view = { comp_spec = { comp = { param; body; _ }; env; arg }; dec; _ };
+    children;
+  } =
+    perform (Lookup_ent path)
+  in
+  match dec with
+  | Retry -> assert false
+  | Idle -> Snoc_list.iter children ~f:update1
+  | Update ->
+      let env = Env.extend env ~id:param ~value:arg in
+      let vss =
+        (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
+        |> vss_of_value_exn
+      in
+
+      let old_trees =
+        children |> Snoc_list.to_list
+        |> Util.pad_or_truncate ~len:(List.length vss)
+      in
+      (* TODO: We assume that updates from a younger sibling to an older sibling
+         are not dropped, while those from an older sibling to a younger sibling
+         are. That's why we are resetting the children list and then snoc each
+         child again in the reconcile function. We should verify this
+         behavior. *)
+      let ent = perform (Lookup_ent path) in
+      perform (Update_ent (path, { ent with children = [] }));
+      reconcile path old_trees vss
+
+and update1 : tree -> unit = function
+  | Leaf_null | Leaf_int _ -> ()
+  | Path path -> update path
+
+and reconcile (path : Path.t) (old_trees : tree option list)
+    (vss : view_spec list) : unit =
+  List.iter2_exn old_trees vss ~f:(fun old_tree new_vs ->
+      let t =
+        match (old_tree, new_vs) with
+        | Some (Leaf_null as t), Vs_null -> t
+        | Some (Leaf_int i as t), Vs_int j when i = j -> t
+        | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) ->
+            let {
+              part_view =
+                { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ };
+              _;
+            } =
+              perform (Lookup_ent pt)
+            in
+            if Id.(name = name') && Value.(arg = arg') then (
+              update1 t;
+              t)
+            else render1 vs
+        | _, vs -> render1 vs
+      in
+      let ({ children; _ } as ent) = perform (Lookup_ent path) in
+      perform
+        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })))
+
 let rec commit_effs (path : Path.t) : unit =
   let { part_view; children } = perform (Lookup_ent path) in
-  (match part_view with
-  | Root -> ()
-  | Node { eff_q; _ } ->
-      Job_q.iter eff_q ~f:(fun { body; env; _ } ->
-          env_h eval body ~env |> ignore));
+  Job_q.iter part_view.eff_q ~f:(fun { body; env; _ } ->
+      env_h eval body ~env |> ignore);
 
   Snoc_list.iter children ~f:commit_effs1
 

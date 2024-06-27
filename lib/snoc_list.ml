@@ -8,5 +8,13 @@ let rec iter t ~(f : 'a -> unit) : unit =
   match t with
   | [] -> ()
   | Snoc (l, a) ->
-      f a;
-      iter l ~f
+      iter l ~f;
+      f a
+
+let[@tail_mod_cons] rec to_list : 'a t -> 'a list = function
+  | [] -> []
+  | Snoc (l, a) -> a :: to_list l
+
+let[@tail_mod_cons] rec of_list : 'a list -> 'a t = function
+  | [] -> []
+  | a :: l -> Snoc (of_list l, a)
