@@ -29,7 +29,7 @@ module Expr = struct
     | Cond : { pred : hook_free t; con : hook_free t; alt : hook_free t } -> _ t
     | Fn : { param : Id.t; body : hook_free t } -> _ t
     | App : { fn : hook_free t; arg : hook_free t } -> _ t
-    | Let : { id : Id.t; bound : hook_free t; body : _ t } -> _ t
+    | Let : { id : Id.t; bound : hook_free t; body : 'a t } -> 'a t
     | Stt : {
         label : Label.t;
         stt : Id.t;
