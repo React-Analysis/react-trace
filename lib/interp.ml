@@ -32,38 +32,75 @@ type _ eff +=
 
 let ptph_h (type a b) (f : b -> a) (x : b) : ptph:Path.t * phase -> a =
   match f x with
-  | v -> fun ~ptph:_ -> v
-  | effect Rd_pt, k -> fun ~ptph -> continue k (fst ptph) ~ptph
-  | effect Rd_ph, k -> fun ~ptph -> continue k (snd ptph) ~ptph
+  | v ->
+      fun ~ptph ->
+        Logger.ptph ptph `Ret;
+        v
+  | effect Rd_pt, k ->
+      fun ~ptph ->
+        Logger.ptph ptph `Rd_pt;
+        continue k (fst ptph) ~ptph
+  | effect Rd_ph, k ->
+      fun ~ptph ->
+        Logger.ptph ptph `Rd_ph;
+        continue k (snd ptph) ~ptph
 
-let rec env_h : type a b. (b -> a) -> b -> env:Env.t -> a =
+let rec env_h : type b a. (b -> a) -> b -> env:Env.t -> a =
  fun f x ->
   match f x with
-  | v -> fun ~env:_ -> v
-  | effect Rd_env, k -> fun ~env -> continue k env ~env
-  | effect In_env env', k -> fun ~env -> continue k (env_h ~env:env') ~env
+  | v ->
+      fun ~env ->
+        Logger.env env `Ret;
+        v
+  | effect Rd_env, k ->
+      fun ~env ->
+        Logger.env env `Rd_env;
+        continue k env ~env
+  | effect In_env env', k ->
+      fun ~env ->
+        Logger.env env (`In_env env');
+        continue k (env_h ~env:env') ~env
 
 let mem_h (type a b) (f : b -> a) (x : b) : mem:Tree_mem.t -> a * Tree_mem.t =
   match f x with
-  | v -> fun ~mem -> (v, mem)
+  | v ->
+      fun ~mem ->
+        Logger.mem mem `Ret;
+        (v, mem)
   (* in eval *)
   | effect Lookup_st (path, label), k ->
-      fun ~mem -> continue k (Tree_mem.lookup_st mem ~path ~label) ~mem
+      fun ~mem ->
+        Logger.mem mem (`Lookup_st (path, label));
+        continue k (Tree_mem.lookup_st mem ~path ~label) ~mem
   | effect Update_st (path, label, (v, q)), k ->
       fun ~mem ->
+        Logger.mem mem (`Update_st (path, label, (v, q)));
         continue k () ~mem:(Tree_mem.update_st mem ~path ~label (v, q))
   | effect Get_dec path, k ->
-      fun ~mem -> continue k (Tree_mem.get_dec mem ~path) ~mem
+      fun ~mem ->
+        Logger.mem mem (`Get_dec path);
+        continue k (Tree_mem.get_dec mem ~path) ~mem
   | effect Set_dec (path, dec), k ->
-      fun ~mem -> continue k () ~mem:(Tree_mem.set_dec mem ~path dec)
+      fun ~mem ->
+        Logger.mem mem (`Set_dec (path, dec));
+        continue k () ~mem:(Tree_mem.set_dec mem ~path dec)
   | effect Enq_eff (path, clos), k ->
-      fun ~mem -> continue k () ~mem:(Tree_mem.enq_eff mem ~path clos)
+      fun ~mem ->
+        Logger.mem mem (`Enq_eff (path, clos));
+        continue k () ~mem:(Tree_mem.enq_eff mem ~path clos)
   (* in render *)
-  | effect Alloc_pt, k -> fun ~mem -> continue k (Tree_mem.alloc_pt mem) ~mem
+  | effect Alloc_pt, k ->
+      fun ~mem ->
+        Logger.mem mem `Alloc_pt;
+        continue k (Tree_mem.alloc_pt mem) ~mem
   | effect Lookup_ent path, k ->
-      fun ~mem -> continue k (Tree_mem.lookup_ent mem ~path) ~mem
+      fun ~mem ->
+        Logger.mem mem (`Lookup_ent path);
+        continue k (Tree_mem.lookup_ent mem ~path) ~mem
   | effect Update_ent (path, ent), k ->
-      fun ~mem -> continue k () ~mem:(Tree_mem.update_ent mem ~path ent)
+      fun ~mem ->
+        Logger.mem mem (`Update_ent (path, ent));
+        continue k () ~mem:(Tree_mem.update_ent mem ~path ent)
 
 let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
@@ -79,8 +116,11 @@ module Env = struct
   let lookup_exn env ~id = lookup env ~id |> value_exn (Unbound_var id)
 end
 
-let rec eval : type a. a Expr.t -> value = function
-  | Const (Unit ()) -> Unit
+let rec eval : type a. a Expr.t -> value =
+ fun expr ->
+  Logger.eval expr;
+  match expr with
+  | Const Unit -> Unit
   | Const (Int i) -> Int i
   | Var id ->
       let env = perform Rd_env in
@@ -170,6 +210,7 @@ let rec eval : type a. a Expr.t -> value = function
 
 let rec eval_mult : type a. a Expr.t -> value =
  fun expr ->
+  Logger.eval_mult expr;
   let v = eval expr in
   let path = perform Rd_pt in
   match perform (Get_dec path) with
@@ -177,6 +218,7 @@ let rec eval_mult : type a. a Expr.t -> value =
   | Idle | Update -> v
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
+  Logger.render path vss;
   List.iter vss ~f:(fun vs ->
       let t = render1 vs in
       (* refetch the whole entry, as the children may have updated the parent *)
@@ -184,19 +226,22 @@ let rec render (path : Path.t) (vss : view_spec list) : unit =
       perform
         (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })))
 
-and render1 : view_spec -> tree = function
+and render1 (vs : view_spec) : tree =
+  Logger.render1 vs;
+  match vs with
   | Vs_null -> Leaf_null
   | Vs_int i -> Leaf_int i
   | Vs_comp ({ comp = { param; body; _ }; env; arg } as comp_spec) ->
       let path = perform Alloc_pt
       and env = Env.extend env ~id:param ~value:arg
       and part_view =
-        {
-          comp_spec;
-          dec = Idle;
-          st_store = St_store.empty;
-          eff_q = Job_q.empty;
-        }
+        Node
+          {
+            comp_spec;
+            dec = Idle;
+            st_store = St_store.empty;
+            eff_q = Job_q.empty;
+          }
       in
       perform (Update_ent (path, { part_view; children = [] }));
 
@@ -209,57 +254,58 @@ and render1 : view_spec -> tree = function
       Path path
 
 let rec update (path : Path.t) : bool =
-  let {
-    part_view = { comp_spec = { comp = { param; body; _ }; env; arg }; dec; _ };
-    children;
-  } =
-    perform (Lookup_ent path)
-  in
-  match dec with
-  | Retry -> assert false
-  | Idle ->
+  Logger.update path;
+  let { part_view; children } = perform (Lookup_ent path) in
+  match part_view with
+  | Root ->
       Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t)
-  | Update ->
-      let env = Env.extend env ~id:param ~value:arg in
-      let vss =
-        (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
-        |> vss_of_value_exn
-      in
+  | Node { comp_spec = { comp = { param; body; _ }; env; arg }; dec; _ } -> (
+      match dec with
+      | Retry -> assert false
+      | Idle ->
+          Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t)
+      | Update ->
+          let env = Env.extend env ~id:param ~value:arg in
+          let vss =
+            (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
+            |> vss_of_value_exn
+          in
 
-      let old_trees =
-        children |> Snoc_list.to_list
-        |> Util.pad_or_truncate ~len:(List.length vss)
-      in
-      (* TODO: We assume that updates from a younger sibling to an older sibling
-         are not dropped, while those from an older sibling to a younger sibling
-         are. That's why we are resetting the children list and then snoc each
-         child again in the reconcile function. We should verify this
-         behavior. *)
-      let ent = perform (Lookup_ent path) in
-      perform (Update_ent (path, { ent with children = [] }));
-      reconcile path old_trees vss
+          let old_trees =
+            children |> Snoc_list.to_list
+            |> Util.pad_or_truncate ~len:(List.length vss)
+          in
+          (* TODO: We assume that updates from a younger sibling to an older
+             sibling are not dropped, while those from an older sibling to a
+             younger sibling are. That's why we are resetting the children list
+             and then snoc each child again in the reconcile function. We should
+             verify this behavior. *)
+          let ent = perform (Lookup_ent path) in
+          perform (Update_ent (path, { ent with children = [] }));
+          reconcile path old_trees vss)
 
-and update1 : tree -> bool = function
-  | Leaf_null | Leaf_int _ -> false
-  | Path path -> update path
+and update1 (t : tree) : bool =
+  Logger.update1 t;
+  match t with Leaf_null | Leaf_int _ -> false | Path path -> update path
 
 and reconcile (path : Path.t) (old_trees : tree option list)
     (vss : view_spec list) : bool =
+  Logger.reconcile path old_trees vss;
   List.fold2_exn old_trees vss ~init:false ~f:(fun updated old_tree new_vs ->
       let t, updated' =
         match (old_tree, new_vs) with
         | Some (Leaf_null as t), Vs_null -> (t, false)
         | Some (Leaf_int i as t), Vs_int j when i = j -> (t, false)
-        | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) ->
-            let {
-              part_view =
-                { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ };
-              _;
-            } =
-              perform (Lookup_ent pt)
-            in
-            if Id.(name = name') && Value.(arg = arg') then (t, update1 t)
-            else (render1 vs, true)
+        | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs)
+          -> (
+            let { part_view; _ } = perform (Lookup_ent pt) in
+            match part_view with
+            | Root -> assert false
+            | Node
+                { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ }
+              ->
+                if Id.(name = name') && Value.(arg = arg') then (t, update1 t)
+                else (render1 vs, true))
         | _, vs -> (render1 vs, true)
       in
       let ({ children; _ } as ent) = perform (Lookup_ent path) in
@@ -268,17 +314,23 @@ and reconcile (path : Path.t) (old_trees : tree option list)
       updated || updated')
 
 let rec commit_effs (path : Path.t) : unit =
+  Logger.commit_effs path;
   let { part_view; children } = perform (Lookup_ent path) in
-  Job_q.iter part_view.eff_q ~f:(fun { body; env; _ } ->
-      env_h eval body ~env |> ignore);
+  (match part_view with
+  | Root -> ()
+  | Node { eff_q; _ } ->
+      Job_q.iter eff_q ~f:(fun { body; env; _ } ->
+          (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore));
 
   Snoc_list.iter children ~f:commit_effs1
 
-and commit_effs1 : tree -> unit = function
-  | Leaf_null | Leaf_int _ -> ()
-  | Path path -> commit_effs path
+and commit_effs1 (t : tree) : unit =
+  Logger.commit_effs1 t;
+  match t with Leaf_null | Leaf_int _ -> () | Path path -> commit_effs path
 
-let rec eval_top : Prog.t -> view_spec list = function
+let rec eval_top (prog : Prog.t) : view_spec list =
+  Logger.eval_top prog;
+  match prog with
   | Expr e -> eval e |> vss_of_value_exn
   | Comp (comp, p) ->
       let env = perform Rd_env in
@@ -286,20 +338,30 @@ let rec eval_top : Prog.t -> view_spec list = function
       perform (In_env env) eval_top p
 
 let step_prog (prog : Prog.t) : Path.t =
-  let vss = eval_top prog in
+  Logger.step_prog prog;
+  let vss = env_h eval_top prog ~env:Env.empty in
   let path = perform Alloc_pt in
+  perform (Update_ent (path, { part_view = Root; children = [] }));
   render path vss;
   commit_effs path;
   path
 
 let step_path (path : Path.t) : bool =
+  Logger.step_path path;
   let has_updates = update path in
   if has_updates then commit_effs path;
   has_updates
 
 let run (prog : Prog.t) : unit =
+  Logger.run prog;
+  let cnt = ref 0 in
   let rec loop () =
     let path = step_prog prog in
-    if step_path path then loop ()
+    if step_path path then (
+      Logs.info (fun m ->
+          m "Step %d"
+            (Int.incr cnt;
+             !cnt));
+      loop ())
   in
   mem_h loop () ~mem:Tree_mem.empty |> ignore

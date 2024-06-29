@@ -24,6 +24,7 @@
    dune
    (ocaml-variants (= 5.1.1+effect-syntax))
    base
+   fmt
    logs
    stdio)
  (tags

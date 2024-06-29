@@ -15,10 +15,13 @@ module type S = sig
   val to_list : t -> elt list
   val fold : t -> init:'acc -> f:('acc -> elt -> 'acc) -> 'acc
   val iter : t -> f:(elt -> unit) -> unit
+  val sexp_of_t : t -> Sexp.t
 end
 
 module M (T : sig
   type t
+
+  val sexp_of_t : t -> Sexp.t
 end) : S with type elt := T.t = struct
   type elt = T.t
   type t = { f : elt list; r : elt list }
@@ -46,4 +49,5 @@ end) : S with type elt := T.t = struct
   let to_list { f; r } = f @ List.rev r
   let fold q = List.fold (to_list q)
   let iter q = List.iter (to_list q)
+  let sexp_of_t t = List.sexp_of_t T.sexp_of_t (to_list t)
 end
