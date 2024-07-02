@@ -142,7 +142,6 @@ let rec eval : type a. a Expr.t -> value =
 
           let self_pt = perform Rd_pt in
           let phase = perform Rd_ph in
-          if Phase.(phase = P_top) then assert false;
 
           let dec =
             if Int.(path = self_pt) && Phase.(phase <> P_effect) then Retry
@@ -188,12 +187,12 @@ let rec eval : type a. a Expr.t -> value =
           if Value.(v_old <> v) then perform (Set_dec (path, Update));
           perform (Update_st (path, label, (v, Job_q.empty)));
           perform (In_env env) eval body
-      | P_effect | P_top -> raise Invalid_phase)
+      | P_effect -> raise Invalid_phase)
   | Eff e ->
       let path = perform Rd_pt
       and phase = perform Rd_ph
       and env = perform Rd_env in
-      (match phase with P_effect | P_top -> raise Invalid_phase | _ -> ());
+      (match phase with P_effect -> raise Invalid_phase | _ -> ());
       perform (Enq_eff (path, { param = Id.unit; body = e; env }));
       Unit
   | Seq (e1, e2) ->
@@ -265,6 +264,7 @@ let rec update (path : Path.t) : bool =
       | Idle ->
           Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t)
       | Update ->
+          perform (Set_dec (path, Idle));
           let env = Env.extend env ~id:param ~value:arg in
           let vss =
             (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
@@ -282,45 +282,47 @@ let rec update (path : Path.t) : bool =
              verify this behavior. *)
           let ent = perform (Lookup_ent path) in
           perform (Update_ent (path, { ent with children = [] }));
-          reconcile path old_trees vss)
+          reconcile path old_trees vss;
+          true)
 
 and update1 (t : tree) : bool =
   Logger.update1 t;
   match t with Leaf_null | Leaf_int _ -> false | Path path -> update path
 
 and reconcile (path : Path.t) (old_trees : tree option list)
-    (vss : view_spec list) : bool =
+    (vss : view_spec list) : unit =
   Logger.reconcile path old_trees vss;
-  List.fold2_exn old_trees vss ~init:false ~f:(fun updated old_tree new_vs ->
-      let t, updated' =
-        match (old_tree, new_vs) with
-        | Some (Leaf_null as t), Vs_null -> (t, false)
-        | Some (Leaf_int i as t), Vs_int j when i = j -> (t, false)
-        | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs)
-          -> (
-            let { part_view; _ } = perform (Lookup_ent pt) in
-            match part_view with
-            | Root -> assert false
-            | Node
-                { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ }
-              ->
-                if Id.(name = name') && Value.(arg = arg') then (t, update1 t)
-                else (render1 vs, true))
-        | _, vs -> (render1 vs, true)
-      in
+  List.iter2_exn old_trees vss ~f:(fun old_tree vs ->
+      let t = reconcile1 old_tree vs in
       let ({ children; _ } as ent) = perform (Lookup_ent path) in
       perform
-        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) }));
-      updated || updated')
+        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })))
+
+and reconcile1 (old_tree : tree option) (vs : view_spec) : tree =
+  Logger.reconcile1 old_tree vs;
+  match (old_tree, vs) with
+  | Some (Leaf_null as t), Vs_null -> t
+  | Some (Leaf_int i as t), Vs_int j when i = j -> t
+  | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) -> (
+      let { part_view; _ } = perform (Lookup_ent pt) in
+      match part_view with
+      | Root -> assert false
+      | Node { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ } ->
+          if Id.(name = name') && Value.(arg = arg') then t else render1 vs)
+  | _, vs -> render1 vs
 
 let rec commit_effs (path : Path.t) : unit =
   Logger.commit_effs path;
-  let { part_view; children } = perform (Lookup_ent path) in
+  let ({ part_view; children } as ent) = perform (Lookup_ent path) in
   (match part_view with
   | Root -> ()
-  | Node { eff_q; _ } ->
+  | Node ({ eff_q; _ } as node) ->
       Job_q.iter eff_q ~f:(fun { body; env; _ } ->
-          (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore));
+          (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore);
+      perform
+        (Update_ent
+           ( path,
+             { ent with part_view = Node { node with eff_q = Job_q.empty } } )));
 
   Snoc_list.iter children ~f:commit_effs1
 
@@ -352,16 +354,17 @@ let step_path (path : Path.t) : bool =
   if has_updates then commit_effs path;
   has_updates
 
-let run (prog : Prog.t) : unit =
+let run ?(step : int option) (prog : Prog.t) : unit =
   Logger.run prog;
-  let cnt = ref 0 in
-  let rec loop () =
+  let driver () =
+    let cnt = ref 1 in
     let path = step_prog prog in
-    if step_path path then (
-      Logs.info (fun m ->
-          m "Step %d"
-            (Int.incr cnt;
-             !cnt));
-      loop ())
+    let rec loop () =
+      Int.incr cnt;
+      Logs.info (fun m -> m "Step %d" !cnt);
+      if step_path path then
+        match step with Some n when !cnt >= n -> () | _ -> loop ()
+    in
+    loop ()
   in
-  mem_h loop () ~mem:Tree_mem.empty |> ignore
+  mem_h driver () ~mem:Tree_mem.empty |> ignore

@@ -18,7 +18,7 @@ module rec T : sig
   and comp_spec = { comp : Prog.comp; env : Env.t; arg : value }
   and view_spec = Vs_null | Vs_int of int | Vs_comp of comp_spec
 
-  type phase = P_init | P_update | P_retry | P_effect | P_top
+  type phase = P_init | P_update | P_retry | P_effect
   type decision = Idle | Retry | Update
 
   type part_view =
@@ -138,7 +138,6 @@ end = struct
     | P_update -> a "P_update"
     | P_retry -> a "P_retry"
     | P_effect -> a "P_effect"
-    | P_top -> a "P_top"
 
   and sexp_of_decision =
     let open Sexp_helper in
@@ -297,8 +296,7 @@ module Phase = struct
     | P_init, P_init
     | P_update, P_update
     | P_retry, P_retry
-    | P_effect, P_effect
-    | P_top, P_top ->
+    | P_effect, P_effect ->
         true
     | _, _ -> false
 

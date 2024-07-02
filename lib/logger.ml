@@ -100,6 +100,13 @@ let reconcile path old_trees vss =
         Sexp.pp
         (List.sexp_of_t Value.sexp_of_view_spec vss))
 
+let reconcile1 old_tree vs =
+  Logs.debug (fun m ->
+      m "reconcile1 [old_tree: %a, vs: %a]" Sexp.pp
+        ((Option.sexp_of_t Value.sexp_of_tree) old_tree)
+        Sexp.pp
+        (Value.sexp_of_view_spec vs))
+
 let commit_effs path =
   Logs.debug (fun m -> m "commit_effs [path: %a]" Sexp.pp (Path.sexp_of_t path))
 
