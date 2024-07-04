@@ -149,6 +149,8 @@ let rec eval : type a. a Expr.t -> value =
           in
           perform (Set_dec (path, dec));
 
+          (*if Int.(path = self_pt) && Phase.(phase <> P_effect) then*)
+          (*  perform (Set_dec (path, Retry));*)
           let v, q = perform (Lookup_st (path, label)) in
           perform (Update_st (path, label, (v, Job_q.enqueue q clos)));
 
@@ -283,7 +285,8 @@ let rec update (path : Path.t) : bool =
           let ent = perform (Lookup_ent path) in
           perform (Update_ent (path, { ent with children = [] }));
           reconcile path old_trees vss;
-          true)
+          let dec = perform (Get_dec path) in
+          Decision.(dec <> Idle))
 
 and update1 (t : tree) : bool =
   Logger.update1 t;
@@ -313,17 +316,23 @@ and reconcile1 (old_tree : tree option) (vs : view_spec) : tree =
 
 let rec commit_effs (path : Path.t) : unit =
   Logger.commit_effs path;
-  let ({ part_view; children } as ent) = perform (Lookup_ent path) in
+  let { part_view; children } = perform (Lookup_ent path) in
   (match part_view with
   | Root -> ()
-  | Node ({ eff_q; _ } as node) ->
+  | Node { eff_q; _ } -> (
       Job_q.iter eff_q ~f:(fun { body; env; _ } ->
           (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore);
-      perform
-        (Update_ent
-           ( path,
-             { ent with part_view = Node { node with eff_q = Job_q.empty } } )));
 
+      (* Refetch the entry, as committing effects may change the entry *)
+      let ent = perform (Lookup_ent path) in
+      match ent.part_view with
+      | Root -> assert false
+      | Node node ->
+          perform
+            (Update_ent
+               ( path,
+                 { ent with part_view = Node { node with eff_q = Job_q.empty } }
+               ))));
   Snoc_list.iter children ~f:commit_effs1
 
 and commit_effs1 (t : tree) : unit =

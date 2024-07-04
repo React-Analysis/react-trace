@@ -3,7 +3,7 @@ open React_trace
 
 let fuel = 100
 
-let set_in_effect_step_two_times () =
+let set_in_effect_step_three_times () =
   let prog =
     let open Syntax in
     Prog.(
@@ -33,7 +33,7 @@ let set_in_effect_step_two_times () =
           Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
   in
   let { Interp.steps } = Interp.run ~fuel prog in
-  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
+  Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
 
 let set_in_effect_step_indefinitely () =
   let prog =
@@ -84,8 +84,8 @@ let () =
     [
       ( "steps",
         [
-          test_case "Set in effect should step two times" `Quick
-            set_in_effect_step_two_times;
+          test_case "Set in effect should step three times" `Quick
+            set_in_effect_step_three_times;
           test_case "Set in effect should step indefintely" `Quick
             set_in_effect_step_indefinitely;
         ] );

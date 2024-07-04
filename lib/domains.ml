@@ -304,3 +304,16 @@ module Phase = struct
   let ( <> ) p1 p2 = not (p1 = p2)
   let sexp_of_t = Value.sexp_of_phase
 end
+
+module Decision = struct
+  type t = decision
+
+  let equal d1 d2 =
+    match (d1, d2) with
+    | Idle, Idle | Retry, Retry | Update, Update -> true
+    | _, _ -> false
+
+  let ( = ) = equal
+  let ( <> ) d1 d2 = not (d1 = d2)
+  let sexp_of_t = Value.sexp_of_decision
+end
