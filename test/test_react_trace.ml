@@ -3,6 +3,39 @@ open React_trace
 
 let fuel = 100
 
+let set_in_body_nonterminate () =
+  let prog =
+    let open Syntax in
+    Prog.(
+      Comp
+        ( {
+            name = "C";
+            param = "x";
+            body =
+              Expr.(
+                Stt
+                  {
+                    label = 0;
+                    stt = "s";
+                    set = "setS";
+                    init = Const (Int 42);
+                    body =
+                      Seq
+                        ( App
+                            {
+                              fn = Var "setS";
+                              arg = Fn { param = "s"; body = Const (Int 43) };
+                            },
+                          View [ Const Unit ] );
+                  });
+          },
+          Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
+  in
+  let run () =
+    Interp.(re_render_limit_h (run ~fuel) prog ~re_render_limit:25) |> ignore
+  in
+  Alcotest.(check_raises) "retry indefintely" Interp.Too_many_re_renders run
+
 let set_in_effect_step_three_times () =
   let prog =
     let open Syntax in
@@ -84,6 +117,8 @@ let () =
     [
       ( "steps",
         [
+          test_case "Set in body should not terminate" `Quick
+            set_in_body_nonterminate;
           test_case "Set in effect should step three times" `Quick
             set_in_effect_step_three_times;
           test_case "Set in effect should step indefintely" `Quick

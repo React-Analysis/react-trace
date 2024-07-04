@@ -30,6 +30,18 @@ type _ eff +=
   | Lookup_ent : Path.t -> entry eff
   | Update_ent : Path.t * entry -> unit eff
 
+(* For testing nontermination *)
+type _ eff += Re_render_limit : int eff
+
+exception Too_many_re_renders
+
+let re_render_limit_h (type a b) (f : b -> a) (x : b) : re_render_limit:int -> a
+    =
+  match f x with
+  | v -> fun ~re_render_limit:_ -> v
+  | effect Re_render_limit, k ->
+      fun ~re_render_limit -> continue k re_render_limit ~re_render_limit
+
 let ptph_h (type a b) (f : b -> a) (x : b) : ptph:Path.t * phase -> a =
   match f x with
   | v ->
@@ -209,13 +221,19 @@ let rec eval : type a. a Expr.t -> value =
       | Times, Int i1, Int i2 -> Int (i1 * i2)
       | _, _, _ -> raise Type_error)
 
-let rec eval_mult : type a. a Expr.t -> value =
- fun expr ->
+let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
+ fun ?(re_render = 1) expr ->
   Logger.eval_mult expr;
+
+  (* This is a hack only used for testing non-termination. *)
+  (try if re_render >= perform Re_render_limit then raise Too_many_re_renders
+   with Stdlib.Effect.Unhandled Re_render_limit -> ());
+
   let v = eval expr in
   let path = perform Rd_pt in
   match perform (Get_dec path) with
-  | Retry -> ptph_h eval_mult expr ~ptph:(path, P_retry)
+  | Retry ->
+      ptph_h (eval_mult ~re_render:(re_render + 1)) expr ~ptph:(path, P_retry)
   | Idle | Update -> v
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
