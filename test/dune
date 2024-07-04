@@ -1,2 +1,3 @@
 (test
+ (libraries alcotest base react_trace)
  (name test_react_trace))

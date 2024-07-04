@@ -354,7 +354,9 @@ let step_path (path : Path.t) : bool =
   if has_updates then commit_effs path;
   has_updates
 
-let run ?(step : int option) (prog : Prog.t) : unit =
+type run_info = { steps : int }
+
+let run ?(fuel : int option) (prog : Prog.t) : run_info =
   Logger.run prog;
   let driver () =
     let cnt = ref 1 in
@@ -363,8 +365,10 @@ let run ?(step : int option) (prog : Prog.t) : unit =
       Int.incr cnt;
       Logs.info (fun m -> m "Step %d" !cnt);
       if step_path path then
-        match step with Some n when !cnt >= n -> () | _ -> loop ()
+        match fuel with Some n when !cnt >= n -> () | _ -> loop ()
     in
-    loop ()
+    loop ();
+    !cnt
   in
-  mem_h driver () ~mem:Tree_mem.empty |> ignore
+  let steps = mem_h driver () ~mem:Tree_mem.empty |> fst in
+  { steps }

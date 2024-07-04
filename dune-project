@@ -26,7 +26,8 @@
    base
    fmt
    logs
-   stdio)
+   stdio
+   (alcotest :with-test))
  (tags
   (React "Static Analysis")))
 
