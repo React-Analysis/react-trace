@@ -10,7 +10,7 @@ open Expr
 %token VIEW
 %token FUN LET STT IN EFF
 %token IF THEN ELSE
-%token EQ /* NOT */
+%token NOT EQ LT GT NE LE GE
 %token AND OR
 %token PLUS MINUS TIMES
 %token LPAREN RPAREN LBRACK RBRACK
@@ -25,6 +25,7 @@ open Expr
 %nonassoc ELSE /* (if ... then ... else ...) */
 %right    OR
 %right    AND
+%left     EQ LT GT NE LE GE
 %left     PLUS MINUS
 %left     TIMES
 %nonassoc prec_unary
@@ -64,9 +65,16 @@ expr:
     | left = expr; op = bop; right = expr
       { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
 %inline uop:
+    | NOT { Not }
     | PLUS { Uplus }
     | MINUS { Uminus }
 %inline bop:
+    | EQ { Eq }
+    | LT { Lt }
+    | GT { Gt }
+    | NE { Ne }
+    | LE { Le }
+    | GE { Ge }
     | AND { And }
     | OR { Or }
     | PLUS { Plus }

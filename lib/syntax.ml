@@ -45,7 +45,7 @@ module Expr = struct
 
   and const = Unit | Bool of bool | Int of int
   and uop = Not | Uplus | Uminus
-  and bop = And | Or | Plus | Minus | Times
+  and bop = Eq | Lt | Gt | Ne | Le | Ge | And | Or | Plus | Minus | Times
 
   type some_expr = Ex : 'a t -> some_expr [@@unboxed]
 
@@ -98,6 +98,12 @@ module Expr = struct
   let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
 
   let string_of_bop = function
+    | Eq -> "="
+    | Lt -> "<"
+    | Gt -> ">"
+    | Ne -> "<>"
+    | Le -> "<="
+    | Ge -> ">="
     | And -> "&&"
     | Or -> "||"
     | Plus -> "+"

@@ -141,8 +141,8 @@ let rec eval : type a. a Expr.t -> value =
       Env.lookup_exn env ~id
   | View es -> View_spec (List.map es ~f:(fun e -> eval e |> vs_of_value_exn))
   | Cond { pred; con; alt } ->
-      let p = eval pred |> int_of_value_exn in
-      if Int.(p <> 0) then eval con else eval alt
+      let p = eval pred |> bool_of_value_exn in
+      if p then eval con else eval alt
   | Fn { param; body } -> Clos { param; body; env = perform Rd_env }
   | App { fn; arg } -> (
       match eval fn with
@@ -218,12 +218,23 @@ let rec eval : type a. a Expr.t -> value =
       let v = eval arg in
       match (op, v) with
       | Not, Bool b -> Bool (not b)
+      | Uplus, Int i -> Int i
       | Uminus, Int i -> Int ~-i
       | _, _ -> raise Type_error)
   | Bop { op; left; right } -> (
       let v1 = eval left in
       let v2 = eval right in
       match (op, v1, v2) with
+      | Eq, Unit, Unit -> Bool true
+      | Eq, Bool b1, Bool b2 -> Bool Bool.(b1 = b2)
+      | Eq, Int i1, Int i2 -> Bool (i1 = i2)
+      | Lt, Int i1, Int i2 -> Bool (i1 < i2)
+      | Gt, Int i1, Int i2 -> Bool (i1 > i2)
+      | Le, Int i1, Int i2 -> Bool (i1 <= i2)
+      | Ge, Int i1, Int i2 -> Bool (i1 >= i2)
+      | Ne, Unit, Unit -> Bool false
+      | Ne, Bool b1, Bool b2 -> Bool Bool.(b1 <> b2)
+      | Ne, Int i1, Int i2 -> Bool (i1 <> i2)
       | And, Bool b1, Bool b2 -> Bool (b1 && b2)
       | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
       | Plus, Int i1, Int i2 -> Int (i1 + i2)

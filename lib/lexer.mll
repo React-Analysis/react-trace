@@ -11,7 +11,7 @@ let keywords =
     [
       ("true", TRUE);
       ("false", FALSE);
-      (*("not", NOT);*)
+      ("not", NOT);
       ("view", VIEW);
       ("fun", FUN);
       ("if", IF);
@@ -44,11 +44,11 @@ rule read =
   | '#'       { comment lexbuf }
   | "->"      { RARROW }
   | '='       { EQ }
-  (*| "<>"      { NE }*)
-  (*| "<="      { LE }*)
-  (*| ">="      { GE }*)
-  (*| '<'       { LT }*)
-  (*| '>'       { GT }*)
+  | '<'       { LT }
+  | '>'       { GT }
+  | "<>"      { NE }
+  | "<="      { LE }
+  | ">="      { GE }
   | "&&"      { AND }
   | "||"      { OR }
   | '+'       { PLUS }
@@ -56,7 +56,6 @@ rule read =
   | '*'       { TIMES }
   (*| '/'       { DIV }*)
   (*| '%'       { REM }*)
-  (*| "~-"      { UMINUS }*)
   | '('       { LPAREN }
   | ')'       { RPAREN }
   | '['       { LBRACK }
