@@ -95,7 +95,7 @@ let set_in_effect_step_indefinitely () =
                                      {
                                        param = "s";
                                        body =
-                                         Bin_op
+                                         Bop
                                            {
                                              op = Plus;
                                              left = Var "s";

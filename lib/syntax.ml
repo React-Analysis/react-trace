@@ -40,10 +40,12 @@ module Expr = struct
         -> hook_full t
     | Eff : hook_free t -> hook_full t
     | Seq : 'a t * 'a t -> 'a t
-    | Bin_op : { op : bin_op; left : hook_free t; right : hook_free t } -> _ t
+    | Uop : { op : uop; arg : hook_free t } -> _ t
+    | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ t
 
   and const = Unit | Bool of bool | Int of int
-  and bin_op = And | Or | Plus | Minus | Times
+  and uop = Not | Uplus | Uminus
+  and bop = And | Or | Plus | Minus | Times
 
   type some_expr = Ex : 'a t -> some_expr [@@unboxed]
 
@@ -51,46 +53,51 @@ module Expr = struct
     let (Ex expr) = expr in
     let ( let* ) = Stdlib.Option.bind in
     match expr with
-    | Const _ as e -> Some e
-    | Var _ as e -> Some e
-    | View _ as e -> Some e
-    | Cond _ as e -> Some e
-    | Fn _ as e -> Some e
-    | App _ as e -> Some e
     | Let ({ body; _ } as e) ->
         let* body = hook_free (Ex body) in
         Some (Let { e with body })
-    | Stt _ -> None
-    | Eff _ -> None
+    | Stt _ | Eff _ -> None
     | Seq (e1, e2) ->
         let* e1 = hook_free (Ex e1) in
         let* e2 = hook_free (Ex e2) in
         Some (Seq (e1, e2))
-    | Bin_op _ as e -> Some e
+    | (Const _ as e)
+    | (Var _ as e)
+    | (View _ as e)
+    | (Cond _ as e)
+    | (Fn _ as e)
+    | (App _ as e)
+    | (Bop _ as e)
+    | (Uop _ as e) ->
+        Some e
 
   let hook_free_exn e = Option.value_exn (hook_free e)
 
   let rec hook_full (expr : some_expr) : hook_full t =
     let (Ex expr) = expr in
     match expr with
-    | Const _ as e -> e
-    | Var _ as e -> e
-    | View _ as e -> e
-    | Cond _ as e -> e
-    | Fn _ as e -> e
-    | App _ as e -> e
     | Let ({ body; _ } as e) ->
         let body = hook_full (Ex body) in
         Let { e with body }
-    | Stt _ as e -> e
-    | Eff _ as e -> e
     | Seq (e1, e2) ->
         let e1 = hook_full (Ex e1) in
         let e2 = hook_full (Ex e2) in
         Seq (e1, e2)
-    | Bin_op _ as e -> e
+    | (Const _ as e)
+    | (Var _ as e)
+    | (View _ as e)
+    | (Cond _ as e)
+    | (Fn _ as e)
+    | (App _ as e)
+    | (Stt _ as e)
+    | (Eff _ as e)
+    | (Uop _ as e)
+    | (Bop _ as e) ->
+        e
 
-  let string_of_bin_op = function
+  let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
+
+  let string_of_bop = function
     | And -> "&&"
     | Or -> "||"
     | Plus -> "+"
@@ -123,11 +130,9 @@ module Expr = struct
           ]
     | Eff e -> l [ a "Eff"; sexp_of_t e ]
     | Seq (e1, e2) -> l [ a "Seq"; sexp_of_t e1; sexp_of_t e2 ]
-    | Bin_op { op; left; right } ->
-        l
-          [
-            a "Bin_op"; a (string_of_bin_op op); sexp_of_t left; sexp_of_t right;
-          ]
+    | Uop { op; arg } -> l [ a "Uop"; a (string_of_uop op); sexp_of_t arg ]
+    | Bop { op; left; right } ->
+        l [ a "Bop"; a (string_of_bop op); sexp_of_t left; sexp_of_t right ]
 end
 
 module Prog = struct

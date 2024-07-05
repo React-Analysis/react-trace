@@ -27,6 +27,7 @@ open Expr
 %right    AND
 %left     PLUS MINUS
 %left     TIMES
+%nonassoc prec_unary
 
 
 %start <Prog.t> prog
@@ -39,7 +40,7 @@ comp_lst:
 comp_expr:
     | LET; name = var; param = var; EQ; body = expr { { name; param; body = hook_full body } }
 expr:
-    | bop_expr { $1 }
+    | atom { $1 }
     | FUN; param = var; RARROW; body = expr { Ex (Fn { param; body = hook_free_exn body }) }
     | LET; id = var; EQ; bound = expr; IN; body = expr
       { let Ex body = body in
@@ -59,11 +60,13 @@ expr:
         | Some e1, Some e2 -> Ex (Seq (e1, e2))
         | _, _ -> Ex (Seq (hook_full e1, hook_full e2))
       }
-bop_expr:
-    | atom { $1 }
-    | left = bop_expr; op = op; right = bop_expr
-      { Ex (Bin_op { op; left = hook_free_exn left; right = hook_free_exn right }) }
-%inline op:
+    | op = uop; expr = expr %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr }) }
+    | left = expr; op = bop; right = expr
+      { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
+%inline uop:
+    | PLUS { Uplus }
+    | MINUS { Uminus }
+%inline bop:
     | AND { And }
     | OR { Or }
     | PLUS { Plus }

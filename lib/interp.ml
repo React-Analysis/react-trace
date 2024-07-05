@@ -214,7 +214,13 @@ let rec eval : type a. a Expr.t -> value =
   | Seq (e1, e2) ->
       eval e1 |> ignore;
       eval e2
-  | Bin_op { op; left; right } -> (
+  | Uop { op; arg } -> (
+      let v = eval arg in
+      match (op, v) with
+      | Not, Bool b -> Bool (not b)
+      | Uminus, Int i -> Int ~-i
+      | _, _ -> raise Type_error)
+  | Bop { op; left; right } -> (
       let v1 = eval left in
       let v2 = eval right in
       match (op, v1, v2) with
