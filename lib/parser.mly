@@ -2,6 +2,16 @@
 open Syntax
 open Prog
 open Expr
+
+let rec label_stts_prog = function
+  | Expr _ as e -> e
+  | Comp (c, tl) ->
+      Comp ({ c with body = label_stts 0 c.body }, label_stts_prog tl)
+
+and label_stts label = function
+  | Stt s -> Stt { s with label; body = label_stts (label + 1) s.body }
+  | e -> e
+
 %}
 
 %token UNIT TRUE FALSE
@@ -34,10 +44,11 @@ open Expr
 %start <Prog.t> prog
 %%
 prog:
-    | prog = comp_lst; EOF { prog }
+    | prog = comp_lst; EOF { label_stts_prog prog }
 comp_lst:
     | e = expr { Expr (hook_free_exn e) }
-    | c = comp_expr; SEMISEMI; tl = comp_lst { Comp (c, tl) } ;
+    | c = comp_expr; SEMISEMI; tl = comp_lst
+      { Comp (c, tl) } ;
 comp_expr:
     | LET; name = var; param = var; EQ; body = expr { { name; param; body = hook_full body } }
 expr:
