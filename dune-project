@@ -25,6 +25,7 @@
    ocaml
    dune
    (ocaml-variants (= 5.1.1+effect-syntax))
+   menhir
    base
    fmt
    logs

@@ -12,6 +12,7 @@ depends: [
   "ocaml"
   "dune" {>= "3.15"}
   "ocaml-variants" {= "5.1.1+effect-syntax"}
+  "menhir"
   "base"
   "fmt"
   "logs"
