@@ -14,9 +14,13 @@ open Expr
 %token AND OR
 %token PLUS MINUS TIMES
 %token LPAREN RPAREN LBRACK RBRACK
-%token RARROW COMMA SEMICOLON COMPEND
+%token RARROW COMMA SEMI SEMISEMI
 %token EOF
 
+%nonassoc RARROW
+%nonassoc IN
+%right    SEMI
+%nonassoc EFF
 %nonassoc THEN /* below ELSE (if ... then ...) */
 %nonassoc ELSE /* (if ... then ... else ...) */
 %right    OR
@@ -31,7 +35,7 @@ prog:
     | prog = comp_lst; EOF { prog }
 comp_lst:
     | e = expr { Expr (hook_free_exn e) }
-    | c = comp_expr; COMPEND; tl = comp_lst { Comp (c, tl) } ;
+    | c = comp_expr; SEMISEMI; tl = comp_lst { Comp (c, tl) } ;
 comp_expr:
     | LET; name = var; param = var; EQ; body = expr { { name; param; body = hook_full body } }
 expr:
@@ -44,12 +48,17 @@ expr:
     | STT; stt = var; COMMA; set = var; EQ; init = expr; IN; body = expr
       { Ex (Stt { label = -1; stt; set; init = hook_free_exn init; body = hook_full body }) }
     | EFF; e = expr { Ex (Eff (hook_free_exn e)) }
-    | VIEW; LBRACK; vss = separated_nonempty_list(SEMICOLON, expr); RBRACK { Ex (View (List.map hook_free_exn vss)) }
+    | VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr); RBRACK { Ex (View (List.map hook_free_exn vss)) }
     | fn = atom; arg = atom { Ex (App { fn = hook_free_exn fn; arg = hook_free_exn arg }) }
     | IF; pred = expr; THEN; con = expr; ELSE; alt = expr
       { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = hook_free_exn alt }) }
     | IF; pred = expr; THEN; con = expr
       { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = Const Unit }) }
+    | e1 = expr; SEMI; e2 = expr
+      { match hook_free e1, hook_free e2 with
+        | Some e1, Some e2 -> Ex (Seq (e1, e2))
+        | _, _ -> Ex (Seq (hook_full e1, hook_full e2))
+      }
 bop_expr:
     | atom { $1 }
     | left = bop_expr; op = op; right = bop_expr
