@@ -3,33 +3,21 @@ open React_trace
 
 let fuel = 100
 
+let parse s =
+  let lexbuf = Lexing.from_string s in
+  Parser.prog Lexer.read lexbuf
+
 let set_in_body_nonterminate () =
   let prog =
-    let open Syntax in
-    Prog.(
-      Comp
-        ( {
-            name = "C";
-            param = "x";
-            body =
-              Expr.(
-                Stt
-                  {
-                    label = 0;
-                    stt = "s";
-                    set = "setS";
-                    init = Const (Int 42);
-                    body =
-                      Seq
-                        ( App
-                            {
-                              fn = Var "setS";
-                              arg = Fn { param = "s"; body = Const (Int 43) };
-                            },
-                          View [ Const Unit ] );
-                  });
-          },
-          Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
+    parse
+      {|
+let C x =
+  stt s, setS = 42 in
+  setS (fun s -> 43);
+  view [()]
+;;
+view [C ()]
+|}
   in
   let run () =
     Interp.(re_render_limit_h (run ~fuel) prog ~re_render_limit:25) |> ignore
@@ -38,75 +26,30 @@ let set_in_body_nonterminate () =
 
 let set_in_effect_step_three_times () =
   let prog =
-    let open Syntax in
-    Prog.(
-      Comp
-        ( {
-            name = "C";
-            param = "x";
-            body =
-              Expr.(
-                Stt
-                  {
-                    label = 0;
-                    stt = "s";
-                    set = "setS";
-                    init = Const (Int 42);
-                    body =
-                      Seq
-                        ( Eff
-                            (App
-                               {
-                                 fn = Var "setS";
-                                 arg = Fn { param = "s"; body = Const (Int 43) };
-                               }),
-                          View [ Const Unit ] );
-                  });
-          },
-          Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
+    parse
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> 43));
+  view [()]
+;;
+view [C ()]
+|}
   in
   let { Interp.steps } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
 
 let set_in_effect_step_indefinitely () =
   let prog =
-    let open Syntax in
-    Prog.(
-      Comp
-        ( {
-            name = "C";
-            param = "x";
-            body =
-              Expr.(
-                Stt
-                  {
-                    label = 0;
-                    stt = "s";
-                    set = "setS";
-                    init = Const (Int 42);
-                    body =
-                      Seq
-                        ( Eff
-                            (App
-                               {
-                                 fn = Var "setS";
-                                 arg =
-                                   Fn
-                                     {
-                                       param = "s";
-                                       body =
-                                         Bop
-                                           {
-                                             op = Plus;
-                                             left = Var "s";
-                                             right = Const (Int 1);
-                                           };
-                                     };
-                               }),
-                          View [ Const Unit ] );
-                  });
-          },
-          Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
+    parse
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> s + 1));
+  view [()]
+;;
+view [C ()]
+|}
   in
   let { Interp.steps } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
