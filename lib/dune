@@ -1,3 +1,9 @@
 (library
  (name react_trace)
  (libraries base logs stdio))
+
+(ocamllex lexer)
+
+(menhir
+ (modules parser)
+ (flags --dump))

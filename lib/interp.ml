@@ -118,6 +118,7 @@ let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
 
 let int_of_value_exn v = v |> Value.to_int |> value_exn Type_error
+let bool_of_value_exn v = v |> Value.to_bool |> value_exn Type_error
 let vs_of_value_exn v = v |> Value.to_vs |> value_exn Type_error
 let vss_of_value_exn v = v |> Value.to_vss |> value_exn Type_error
 let clos_of_value_exn v = v |> Value.to_clos |> value_exn Type_error
@@ -133,6 +134,7 @@ let rec eval : type a. a Expr.t -> value =
   Logger.eval expr;
   match expr with
   | Const Unit -> Unit
+  | Const (Bool b) -> Bool b
   | Const (Int i) -> Int i
   | Var id ->
       let env = perform Rd_env in
@@ -216,6 +218,8 @@ let rec eval : type a. a Expr.t -> value =
       let v1 = eval left in
       let v2 = eval right in
       match (op, v1, v2) with
+      | And, Bool b1, Bool b2 -> Bool (b1 && b2)
+      | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
       | Plus, Int i1, Int i2 -> Int (i1 + i2)
       | Minus, Int i1, Int i2 -> Int (i1 - i2)
       | Times, Int i1, Int i2 -> Int (i1 * i2)

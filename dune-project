@@ -1,5 +1,7 @@
 (lang dune 3.15)
 
+(using menhir 3.0)
+
 (name react_trace)
 
 (generate_opam_files true)

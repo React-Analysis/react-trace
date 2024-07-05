@@ -2,50 +2,65 @@ open! Base
 open Stdio
 open React_trace
 
-let test_prog =
-  let open Syntax in
-  Prog.(
-    Comp
-      ( {
-          name = "C";
-          param = "x";
-          body =
-            Expr.(
-              Stt
-                {
-                  label = 0;
-                  stt = "s";
-                  set = "setS";
-                  init = Const (Int 42);
-                  body =
-                    Seq
-                      ( Eff
-                          (App
-                             {
-                               fn = Var "setS";
-                               arg =
-                                 Fn
-                                   {
-                                     param = "s";
-                                     body =
-                                       Bin_op
-                                         {
-                                           op = Plus;
-                                           left = Var "s";
-                                           right = Const (Int 1);
-                                         };
-                                   };
-                             }),
-                        View [ Const Unit ] );
-                });
-        },
-        Expr Expr.(View [ App { fn = Var "C"; arg = Const Unit } ]) ))
+let print_position (outx : Out_channel.t) (lexbuf : Lexing.lexbuf) : unit =
+  let open Lexing in
+  let pos = lexbuf.lex_curr_p in
+  Out_channel.fprintf outx "%s:%d:%d" pos.pos_fname pos.pos_lnum
+    (pos.pos_cnum - pos.pos_bol + 1)
+
+let parse_with_error (lexbuf : Lexing.lexbuf) : Syntax.Prog.t =
+  Parser.prog Lexer.read lexbuf
+
+let get_program (filename : string) : Syntax.Prog.t =
+  let filename, inx =
+    if String.(filename = "-") then ("<stdin>", In_channel.stdin)
+    else (filename, In_channel.create filename)
+  in
+  let lexbuf = Lexing.from_channel inx in
+  lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
+
+  match parse_with_error lexbuf with
+  | prog ->
+      In_channel.close inx;
+      prog
+  | exception Parser.Error ->
+      Out_channel.fprintf stderr "%a: syntax error\n" print_position lexbuf;
+      In_channel.close inx;
+      Stdlib.exit 2
 
 let () =
-  Fmt_tty.setup_std_outputs ();
-  Logs.set_reporter (Logs_fmt.reporter ());
-  Logs.set_level (Some Logs.Debug);
-  Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t test_prog);
-  let { Interp.steps } = Interp.run ~fuel:4 test_prog in
-  printf "\nSteps: %d\n" steps;
-  Stdlib.exit (if Logs.err_count () > 0 then 1 else 0)
+  let module Arg = Stdlib.Arg in
+  let module Sys = Stdlib.Sys in
+  let module Filename = Stdlib.Filename in
+  let filename = ref "" in
+  let opt_pp = ref false in
+  let opt_fuel = ref None in
+  let opt_verbosity = ref Logs.Info in
+
+  let usage_msg =
+    "Usage : " ^ Filename.basename Sys.argv.(0) ^ " [-option] [filename] "
+  in
+  let speclist =
+    [
+      ("-pp", Arg.Unit (fun _ -> opt_pp := true), "Pretty-print program");
+      ( "-verbose",
+        Arg.Unit (fun _ -> opt_verbosity := Logs.Debug),
+        "Verbose mode" );
+      ("-fuel", Arg.Int (fun n -> opt_fuel := Some n), "[fuel] Run with fuel");
+    ]
+  in
+  Arg.parse speclist (fun x -> filename := x) usage_msg;
+  if String.is_empty !filename then Arg.usage speclist usage_msg
+  else (
+    Fmt_tty.setup_std_outputs ();
+    Logs.set_reporter (Logs_fmt.reporter ());
+    Logs.set_level (Some !opt_verbosity);
+
+    let prog = get_program !filename in
+
+    if !opt_pp then
+      Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)
+    else
+      let { Interp.steps } = Interp.run ?fuel:!opt_fuel prog in
+      printf "\nSteps: %d\n" steps;
+      Stdlib.exit (if Logs.err_count () > 0 then 1 else 0))

@@ -5,6 +5,7 @@ module Path = Util.Map_key (Int)
 module rec T : sig
   type value =
     | Unit
+    | Bool of bool
     | Int of int
     | View_spec of view_spec list
     | Clos of clos
@@ -41,6 +42,7 @@ and Value : sig
   val equal : t -> t -> bool
   val ( = ) : t -> t -> bool
   val ( <> ) : t -> t -> bool
+  val to_bool : t -> bool option
   val to_int : t -> int option
   val to_vs : t -> T.view_spec option
   val to_vss : t -> T.view_spec list option
@@ -64,11 +66,13 @@ end = struct
   let equal v1 v2 =
     match (v1, v2) with
     | Unit, Unit -> true
+    | Bool b1, Bool b2 -> Bool.(b1 = b2)
     | Int i1, Int i2 -> i1 = i2
     | _, _ -> false
 
   let ( = ) = equal
   let ( <> ) v1 v2 = not (v1 = v2)
+  let to_bool = function Bool b -> Some b | _ -> None
   let to_int = function Int i -> Some i | _ -> None
 
   let to_vs = function
@@ -84,6 +88,7 @@ end = struct
     let open Sexp_helper in
     function
     | Unit -> a "()"
+    | Bool b -> Bool.sexp_of_t b
     | Int i -> Int.sexp_of_t i
     | Comp_spec s -> sexp_of_comp_spec s
     | View_spec vss -> l (List.map vss ~f:sexp_of_view_spec)

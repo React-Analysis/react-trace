@@ -42,15 +42,66 @@ module Expr = struct
     | Seq : 'a t * 'a t -> 'a t
     | Bin_op : { op : bin_op; left : hook_free t; right : hook_free t } -> _ t
 
-  and const = Unit | Int of int
-  and bin_op = Plus | Minus | Times
+  and const = Unit | Bool of bool | Int of int
+  and bin_op = And | Or | Plus | Minus | Times
 
-  let string_of_bin_op = function Plus -> "+" | Minus -> "-" | Times -> "*"
+  type some_expr = Ex : 'a t -> some_expr [@@unboxed]
+
+  let rec hook_free (expr : some_expr) : hook_free t option =
+    let (Ex expr) = expr in
+    let ( let* ) = Stdlib.Option.bind in
+    match expr with
+    | Const _ as e -> Some e
+    | Var _ as e -> Some e
+    | View _ as e -> Some e
+    | Cond _ as e -> Some e
+    | Fn _ as e -> Some e
+    | App _ as e -> Some e
+    | Let ({ body; _ } as e) ->
+        let* body = hook_free (Ex body) in
+        Some (Let { e with body })
+    | Stt _ -> None
+    | Eff _ -> None
+    | Seq (e1, e2) ->
+        let* e1 = hook_free (Ex e1) in
+        let* e2 = hook_free (Ex e2) in
+        Some (Seq (e1, e2))
+    | Bin_op _ as e -> Some e
+
+  let hook_free_exn e = Option.value_exn (hook_free e)
+
+  let rec hook_full (expr : some_expr) : hook_full t =
+    let (Ex expr) = expr in
+    match expr with
+    | Const _ as e -> e
+    | Var _ as e -> e
+    | View _ as e -> e
+    | Cond _ as e -> e
+    | Fn _ as e -> e
+    | App _ as e -> e
+    | Let ({ body; _ } as e) ->
+        let body = hook_full (Ex body) in
+        Let { e with body }
+    | Stt _ as e -> e
+    | Eff _ as e -> e
+    | Seq (e1, e2) ->
+        let e1 = hook_full (Ex e1) in
+        let e2 = hook_full (Ex e2) in
+        Seq (e1, e2)
+    | Bin_op _ as e -> e
+
+  let string_of_bin_op = function
+    | And -> "&&"
+    | Or -> "||"
+    | Plus -> "+"
+    | Minus -> "-"
+    | Times -> "*"
 
   let rec sexp_of_t : type a. a t -> Sexp.t =
     let open Sexp_helper in
     function
     | Const Unit -> a "()"
+    | Const (Bool b) -> Bool.sexp_of_t b
     | Const (Int i) -> Int.sexp_of_t i
     | Var id -> Id.sexp_of_t id
     | View es -> l (a "View" :: List.map ~f:sexp_of_t es)
