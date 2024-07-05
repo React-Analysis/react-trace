@@ -6,10 +6,10 @@ open Expr
 let rec label_stts_prog = function
   | Expr _ as e -> e
   | Comp (c, tl) ->
-      Comp ({ c with body = label_stts 0 c.body }, label_stts_prog tl)
+      Comp ({ c with body = label_stts_expr 0 c.body }, label_stts_prog tl)
 
-and label_stts label = function
-  | Stt s -> Stt { s with label; body = label_stts (label + 1) s.body }
+and label_stts_expr label = function
+  | Stt s -> Stt { s with label; body = label_stts_expr (label + 1) s.body }
   | e -> e
 
 %}
@@ -40,40 +40,41 @@ and label_stts label = function
 %left     TIMES
 %nonassoc prec_unary
 
-
 %start <Prog.t> prog
+%start <some_expr> expr
 %%
 prog:
     | prog = comp_lst; EOF { label_stts_prog prog }
+expr:
+    | e = expr_; EOF { Ex (label_stts_expr 0 (hook_full e)) }
 comp_lst:
-    | e = expr { Expr (hook_free_exn e) }
+    | e = expr_ { Expr (hook_free_exn e) }
     | c = comp_expr; SEMISEMI; tl = comp_lst
       { Comp (c, tl) } ;
 comp_expr:
-    | LET; name = var; param = var; EQ; body = expr { { name; param; body = hook_full body } }
-expr:
-    | atom { $1 }
-    | FUN; param = var; RARROW; body = expr { Ex (Fn { param; body = hook_free_exn body }) }
-    | LET; id = var; EQ; bound = expr; IN; body = expr
+    | LET; name = var; param = var; EQ; body = expr_ { { name; param; body = hook_full body } }
+expr_:
+    | apply { $1 }
+    | FUN; param = var; RARROW; body = expr_ { Ex (Fn { param; body = hook_free_exn body }) }
+    | LET; id = var; EQ; bound = expr_; IN; body = expr_
       { let Ex body = body in
         Ex (Let { id; bound = hook_free_exn bound; body })
       }
-    | STT; stt = var; COMMA; set = var; EQ; init = expr; IN; body = expr
+    | STT; stt = var; COMMA; set = var; EQ; init = expr_; IN; body = expr_
       { Ex (Stt { label = -1; stt; set; init = hook_free_exn init; body = hook_full body }) }
-    | EFF; e = expr { Ex (Eff (hook_free_exn e)) }
-    | VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr); RBRACK { Ex (View (List.map hook_free_exn vss)) }
-    | fn = atom; arg = atom { Ex (App { fn = hook_free_exn fn; arg = hook_free_exn arg }) }
-    | IF; pred = expr; THEN; con = expr; ELSE; alt = expr
+    | EFF; e = expr_ { Ex (Eff (hook_free_exn e)) }
+    | VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr_); RBRACK { Ex (View (List.map hook_free_exn vss)) }
+    | IF; pred = expr_; THEN; con = expr_; ELSE; alt = expr_
       { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = hook_free_exn alt }) }
-    | IF; pred = expr; THEN; con = expr
+    | IF; pred = expr_; THEN; con = expr_
       { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = Const Unit }) }
-    | e1 = expr; SEMI; e2 = expr
+    | e1 = expr_; SEMI; e2 = expr_
       { match hook_free e1, hook_free e2 with
         | Some e1, Some e2 -> Ex (Seq (e1, e2))
         | _, _ -> Ex (Seq (hook_full e1, hook_full e2))
       }
-    | op = uop; expr = expr %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr }) }
-    | left = expr; op = bop; right = expr
+    | op = uop; expr_ = expr_ %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr_ }) }
+    | left = expr_; op = bop; right = expr_
       { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
 %inline uop:
     | NOT { Not }
@@ -91,12 +92,15 @@ expr:
     | PLUS { Plus }
     | MINUS { Minus }
     | TIMES { Times }
+apply:
+    | atom { $1 }
+    | fn = apply; arg = atom { Ex (App { fn = hook_free_exn fn; arg = hook_free_exn arg }) }
 atom:
     | UNIT { Ex (Const Unit) }
     | TRUE { Ex (Const (Bool true)) }
     | FALSE { Ex (Const (Bool false)) }
     | n = INT { Ex (Const (Int n)) }
     | var = var { Ex (Var var) }
-    | LPAREN; e = expr; RPAREN { e }
+    | LPAREN; e = expr_; RPAREN { e }
 var:
     | x = ID { x }
