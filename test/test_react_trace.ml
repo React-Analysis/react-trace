@@ -190,7 +190,7 @@ let parse_seq () =
 
 let parse_op () =
   let open Syntax in
-  let (Ex expr) = parse_expr "not (+-42 <= 0 + -0) || true" in
+  let (Ex expr) = parse_expr "not (+-a () <= 0 + -0) || true" in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse op" ~actual:(Expr.sexp_of_t expr)
     ~expected:
@@ -211,7 +211,13 @@ let parse_op () =
                              Uop
                                {
                                  op = Uplus;
-                                 arg = Uop { op = Uminus; arg = Const (Int 42) };
+                                 arg =
+                                   Uop
+                                     {
+                                       op = Uminus;
+                                       arg =
+                                         App { fn = Var "a"; arg = Const Unit };
+                                     };
                                };
                            right =
                              Bop
