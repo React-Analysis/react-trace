@@ -408,12 +408,13 @@ let run ?(fuel : int option) (prog : Prog.t) : run_info =
   Logger.run prog;
   let driver () =
     let cnt = ref 1 in
+    Logs.info (fun m -> m "Step prog %d" !cnt);
     let path = step_prog prog in
     let rec loop () =
-      Int.incr cnt;
-      Logs.info (fun m -> m "Step %d" !cnt);
-      if step_path path then
-        match fuel with Some n when !cnt >= n -> () | _ -> loop ()
+      Logs.info (fun m -> m "Step path %d" (!cnt + 1));
+      if step_path path then (
+        Int.incr cnt;
+        match fuel with Some n when !cnt >= n -> () | _ -> loop ())
     in
     loop ();
     !cnt
