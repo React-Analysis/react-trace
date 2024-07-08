@@ -262,6 +262,36 @@ view [C ()]
   in
   Alcotest.(check_raises) "retry indefintely" Interp.Too_many_re_renders run
 
+let set_in_body_guarded () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  if s = 42 then setS (fun s -> 43);
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
+
+let set_in_effect_step_one_time () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> 42));
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:1 ~actual:steps
+
 let set_in_effect_step_two_times () =
   let prog =
     parse_prog
@@ -292,6 +322,99 @@ view [C ()]
   let { Interp.steps } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
 
+let set_in_effect_guarded_step_two_times () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (if s = 42 then setS (fun s -> 43));
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
+
+let set_in_effect_guarded_step_n_times () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (if s <= 45 then setS (fun s -> s + 1));
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
+
+let set_in_effect_with_arg_step_one_time () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (if s <> x then setS (fun s -> x));
+  view [()]
+;;
+view [C 42]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
+
+let set_in_effect_with_arg_step_two_times () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (if s <> x then setS (fun s -> x));
+  view [()]
+;;
+view [C 0]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
+
+let set_passed_step_two_times () =
+  let prog =
+    parse_prog
+      {|
+let C setS =
+  eff (setS (fun s -> 0));
+  view [()]
+;;
+let D x =
+  stt s, setS = 42 in
+  view [C setS]
+;;
+view [D ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
+
+let set_in_effect_twice_step_one_time () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> 43); setS (fun s -> 42));
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
+
 let () =
   let open Alcotest in
   run "Interpreter"
@@ -319,9 +442,25 @@ let () =
           test_case "No side effect should step one time" `Quick no_side_effect;
           test_case "Set in body should not terminate" `Quick
             set_in_body_nonterminate;
+          test_case "Guarded set in body should step one time" `Quick
+            set_in_body_guarded;
+          test_case "Set in effect should step one time" `Quick
+            set_in_effect_step_one_time;
           test_case "Set in effect should step two times" `Quick
             set_in_effect_step_two_times;
           test_case "Set in effect should step indefintely" `Quick
             set_in_effect_step_indefinitely;
+          test_case "Guarded set in effect should step two times" `Quick
+            set_in_effect_guarded_step_two_times;
+          test_case "Guarded set in effect should step five times" `Quick
+            set_in_effect_guarded_step_n_times;
+          test_case "Set in effect with arg should step one time" `Quick
+            set_in_effect_with_arg_step_one_time;
+          test_case "Set in effect with arg should step two times" `Quick
+            set_in_effect_with_arg_step_two_times;
+          test_case "Set passed to child should step two times" `Quick
+            set_passed_step_two_times;
+          test_case "Set in effect twice should step one time" `Quick
+            set_in_effect_twice_step_one_time;
         ] );
     ]
