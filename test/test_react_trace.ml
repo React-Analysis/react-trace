@@ -400,6 +400,24 @@ view [D ()]
   let { Interp.steps } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
+let set_passed_step_indefinitely () =
+  let prog =
+    parse_prog
+      {|
+let C setS =
+  eff (setS (fun s -> s + 1));
+  view [()]
+;;
+let D x =
+  stt s, setS = 42 in
+  view [C setS]
+;;
+view [D ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:fuel ~actual:steps
+
 let set_in_effect_twice_step_one_time () =
   let prog =
     parse_prog
@@ -414,6 +432,29 @@ view [C ()]
   in
   let { Interp.steps } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
+
+let set_in_removed_child_step_two_times () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> s + 1));
+  view [()]
+;;
+let D x =
+  stt s, setS = true in
+  eff (setS (fun s -> false));
+  if s then
+    view [C ()]
+  else
+    view [()]
+;;
+view [D ()]
+|}
+  in
+  let { Interp.steps } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let () =
   let open Alcotest in
@@ -460,7 +501,11 @@ let () =
             set_in_effect_with_arg_step_two_times;
           test_case "Set passed to child should step two times" `Quick
             set_passed_step_two_times;
+          test_case "Set passed to child should step indefintely" `Quick
+            set_passed_step_indefinitely;
           test_case "Set in effect twice should step one time" `Quick
             set_in_effect_twice_step_one_time;
+          test_case "Set in removed child should step two times" `Quick
+            set_in_removed_child_step_two_times;
         ] );
     ]

@@ -293,65 +293,78 @@ and render1 (vs : view_spec) : tree =
 
       Path path
 
-let rec update (path : Path.t) : bool =
+let rec update (path : Path.t) (arg : value option) : bool =
   Logger.update path;
   let { part_view; children } = perform (Lookup_ent path) in
   match part_view with
-  | Root ->
-      Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t)
-  | Node { comp_spec = { comp = { param; body; _ }; env; arg }; dec; _ } -> (
-      match dec with
-      | Retry -> assert false
-      | Idle ->
-          Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t)
-      | Update ->
-          perform (Set_dec (path, Idle));
-          let env = Env.extend env ~id:param ~value:arg in
-          let vss =
-            (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
-            |> vss_of_value_exn
-          in
+  | Root -> update_idle children
+  | Node { comp_spec = { comp = { param; body; _ }; env; arg = arg' }; dec; _ }
+    ->
+      let is_idle =
+        match dec with
+        | Retry -> assert false
+        | Idle -> (
+            match arg with None -> true | Some arg -> Value.(arg = arg'))
+        | Update -> false
+      in
 
-          let old_trees =
-            children |> Snoc_list.to_list
-            |> Util.pad_or_truncate ~len:(List.length vss)
-          in
-          (* TODO: We assume that updates from a younger sibling to an older
-             sibling are not dropped, while those from an older sibling to a
-             younger sibling are. That's why we are resetting the children list
-             and then snoc each child again in the reconcile function. We should
-             verify this behavior. *)
-          let ent = perform (Lookup_ent path) in
-          perform (Update_ent (path, { ent with children = [] }));
-          reconcile path old_trees vss;
-          let dec = perform (Get_dec path) in
-          Decision.(dec <> Idle))
+      if is_idle then update_idle children
+      else (
+        perform (Set_dec (path, Idle));
+        let env =
+          Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
+        in
+        let vss =
+          (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
+          |> vss_of_value_exn
+        in
 
-and update1 (t : tree) : bool =
+        let old_trees =
+          children |> Snoc_list.to_list
+          |> Util.pad_or_truncate ~len:(List.length vss)
+        in
+        (* TODO: We assume that updates from a younger sibling to an older
+           sibling are not dropped, while those from an older sibling to a
+           younger sibling are. That's why we are resetting the children list
+           and then snoc each child again in the reconcile function. We should
+           verify this behavior. *)
+        let ent = perform (Lookup_ent path) in
+        perform (Update_ent (path, { ent with children = [] }));
+        let updated = reconcile path old_trees vss in
+        let dec = perform (Get_dec path) in
+        updated || Decision.(dec <> Idle))
+
+and update_idle (children : tree Snoc_list.t) : bool =
+  Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t None)
+
+and update1 (t : tree) (arg : value option) : bool =
   Logger.update1 t;
-  match t with Leaf_null | Leaf_int _ -> false | Path path -> update path
+  match t with Leaf_null | Leaf_int _ -> false | Path path -> update path arg
 
 and reconcile (path : Path.t) (old_trees : tree option list)
-    (vss : view_spec list) : unit =
+    (vss : view_spec list) : bool =
   Logger.reconcile path old_trees vss;
-  List.iter2_exn old_trees vss ~f:(fun old_tree vs ->
-      let t = reconcile1 old_tree vs in
+  List.fold2_exn old_trees vss ~init:false ~f:(fun acc old_tree vs ->
+      let updated, t = reconcile1 old_tree vs in
       let ({ children; _ } as ent) = perform (Lookup_ent path) in
       perform
-        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })))
+        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) }));
+      acc || updated)
 
-and reconcile1 (old_tree : tree option) (vs : view_spec) : tree =
+and reconcile1 (old_tree : tree option) (vs : view_spec) : bool * tree =
   Logger.reconcile1 old_tree vs;
   match (old_tree, vs) with
-  | Some (Leaf_null as t), Vs_null -> t
-  | Some (Leaf_int i as t), Vs_int j when i = j -> t
+  | Some (Leaf_null as t), Vs_null -> (false, t)
+  | Some (Leaf_int i as t), Vs_int j when i = j -> (false, t)
   | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) -> (
       let { part_view; _ } = perform (Lookup_ent pt) in
       match part_view with
       | Root -> assert false
       | Node { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ } ->
-          if Id.(name = name') && Value.(arg = arg') then t else render1 vs)
-  | _, vs -> render1 vs
+          if Id.(name = name') then
+            (update1 t (if Value.(arg = arg') then None else Some arg), t)
+          else (true, render1 vs))
+  | _, vs -> (true, render1 vs)
 
 let rec commit_effs (path : Path.t) : unit =
   Logger.commit_effs path;
@@ -398,7 +411,7 @@ let step_prog (prog : Prog.t) : Path.t =
 
 let step_path (path : Path.t) : bool =
   Logger.step_path path;
-  let has_updates = update path in
+  let has_updates = update path None in
   if has_updates then commit_effs path;
   has_updates
 
