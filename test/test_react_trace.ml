@@ -242,7 +242,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_body_nonterminate () =
@@ -274,7 +274,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_step_one_time () =
@@ -289,7 +289,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:1 ~actual:steps
 
 let set_in_effect_step_two_times () =
@@ -304,7 +304,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_step_indefinitely () =
@@ -319,7 +319,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
 
 let set_in_effect_guarded_step_two_times () =
@@ -334,7 +334,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_guarded_step_n_times () =
@@ -349,7 +349,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
 let set_in_effect_with_arg_step_one_time () =
@@ -364,7 +364,7 @@ let C x =
 view [C 42]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_with_arg_step_two_times () =
@@ -379,7 +379,7 @@ let C x =
 view [C 0]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_two_times () =
@@ -397,7 +397,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_indefinitely () =
@@ -415,7 +415,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:fuel ~actual:steps
 
 let set_in_effect_twice_step_one_time () =
@@ -430,7 +430,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_removed_child_step_two_times () =
@@ -453,7 +453,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let () =

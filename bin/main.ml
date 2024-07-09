@@ -61,6 +61,6 @@ let () =
     if !opt_pp then
       Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)
     else
-      let { Interp.steps } = Interp.run ?fuel:!opt_fuel prog in
+      let { Interp.steps; _ } = Interp.run ?fuel:!opt_fuel prog in
       printf "\nSteps: %d\n" steps;
       Stdlib.exit (if Logs.err_count () > 0 then 1 else 0))

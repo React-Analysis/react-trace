@@ -415,7 +415,7 @@ let step_path (path : Path.t) : bool =
   if has_updates then commit_effs path;
   has_updates
 
-type run_info = { steps : int }
+type run_info = { steps : int; mem : Tree_mem.t }
 
 let run ?(fuel : int option) (prog : Prog.t) : run_info =
   Logger.run prog;
@@ -432,5 +432,5 @@ let run ?(fuel : int option) (prog : Prog.t) : run_info =
     loop ();
     !cnt
   in
-  let steps = mem_h driver () ~mem:Tree_mem.empty |> fst in
-  { steps }
+  let steps, mem = mem_h driver () ~mem:Tree_mem.empty in
+  { steps; mem }
