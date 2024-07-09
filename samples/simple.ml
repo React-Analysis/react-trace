@@ -1,6 +1,14 @@
 let C x =
-  stt s, setS = if --42 = +42 then +0+42*1 else 42 in
-  eff (setS (fun s -> -43));
+  stt s, setS = 42 in
+  eff (setS (fun s -> 0));
   view [()]
 ;;
-view [C ()]
+let D x =
+  stt s, setS = true in
+  eff (setS (fun s -> false));
+  if s then
+    view [C ()]
+  else
+    view [C (), C ()]
+;;
+view [D ()]

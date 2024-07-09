@@ -456,6 +456,52 @@ view [D ()]
   let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
+let state_persists_in_child () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> 0));
+  view [()]
+;;
+let D x =
+  stt s, setS = true in
+  eff (setS (fun s -> false));
+  if s then
+    view [C ()]
+  else
+    view [C ()]
+;;
+view [D ()]
+|}
+  in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
+
+let new_child_steps_again () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = 42 in
+  eff (setS (fun s -> 0));
+  view [()]
+;;
+let D x =
+  stt s, setS = true in
+  eff (setS (fun s -> false));
+  if s then
+    view [C ()]
+  else
+    view [C (), C ()]
+;;
+view [D ()]
+|}
+  in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
+
 let () =
   let open Alcotest in
   run "Interpreter"
@@ -507,5 +553,7 @@ let () =
             set_in_effect_twice_step_one_time;
           test_case "Set in removed child should step two times" `Quick
             set_in_removed_child_step_two_times;
+          test_case "Same child gets persisted" `Quick state_persists_in_child;
+          test_case "New child steps again" `Quick new_child_steps_again;
         ] );
     ]
