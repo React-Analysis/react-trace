@@ -299,40 +299,35 @@ let rec update (path : Path.t) (arg : value option) : bool =
   match part_view with
   | Root -> update_idle children
   | Node { comp_spec = { comp = { param; body; _ }; env; arg = arg' }; dec; _ }
-    ->
-      let is_idle =
-        match dec with
-        | Retry -> assert false
-        | Idle -> (
-            match arg with None -> true | Some arg -> Value.(arg = arg'))
-        | Update -> false
-      in
+    -> (
+      match (dec, arg) with
+      | Retry, _ -> assert false
+      | Idle, None -> update_idle children
+      | Idle, Some _ | Update, _ ->
+          (* Invariant: if arg is Some _, then it is different from arg' *)
+          perform (Set_dec (path, Idle));
+          let env =
+            Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
+          in
+          let vss =
+            (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
+            |> vss_of_value_exn
+          in
 
-      if is_idle then update_idle children
-      else (
-        perform (Set_dec (path, Idle));
-        let env =
-          Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
-        in
-        let vss =
-          (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
-          |> vss_of_value_exn
-        in
-
-        let old_trees =
-          children |> Snoc_list.to_list
-          |> Util.pad_or_truncate ~len:(List.length vss)
-        in
-        (* TODO: We assume that updates from a younger sibling to an older
-           sibling are not dropped, while those from an older sibling to a
-           younger sibling are. That's why we are resetting the children list
-           and then snoc each child again in the reconcile function. We should
-           verify this behavior. *)
-        let ent = perform (Lookup_ent path) in
-        perform (Update_ent (path, { ent with children = [] }));
-        let updated = reconcile path old_trees vss in
-        let dec = perform (Get_dec path) in
-        updated || Decision.(dec <> Idle))
+          let old_trees =
+            children |> Snoc_list.to_list
+            |> Util.pad_or_truncate ~len:(List.length vss)
+          in
+          (* TODO: We assume that updates from a younger sibling to an older
+             sibling are not dropped, while those from an older sibling to a
+             younger sibling are. That's why we are resetting the children list
+             and then snoc each child again in the reconcile function. We should
+             verify this behavior. *)
+          let ent = perform (Lookup_ent path) in
+          perform (Update_ent (path, { ent with children = [] }));
+          let updated = reconcile path old_trees vss in
+          let dec = perform (Get_dec path) in
+          updated || Decision.(dec <> Idle))
 
 and update_idle (children : tree Snoc_list.t) : bool =
   Snoc_list.fold children ~init:false ~f:(fun acc t -> acc || update1 t None)
