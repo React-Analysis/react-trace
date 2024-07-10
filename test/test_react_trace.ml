@@ -416,7 +416,7 @@ view [D ()]
 |}
   in
   let { Interp.steps; _ } = Interp.run ~fuel prog in
-  Alcotest.(check' int) ~msg:"step two times" ~expected:fuel ~actual:steps
+  Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
 
 let set_in_effect_twice_step_one_time () =
   let prog =
