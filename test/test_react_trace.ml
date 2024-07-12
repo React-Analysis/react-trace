@@ -1,4 +1,5 @@
 open! Base
+open Stdlib.Effect.Deep
 open React_trace
 
 let fuel = 100
@@ -258,7 +259,8 @@ view [C ()]
 |}
   in
   let run () =
-    Interp.(re_render_limit_h (run ~fuel) prog ~re_render_limit:25) |> ignore
+    Interp.(match_with (run ~fuel) prog re_render_limit_h ~re_render_limit:25)
+    |> ignore
   in
   Alcotest.(check_raises) "retry indefintely" Interp.Too_many_re_renders run
 

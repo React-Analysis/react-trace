@@ -9,110 +9,146 @@ exception Type_error
 exception Invalid_phase
 
 (* path and phase effects *)
-type _ eff += Rd_pt : Path.t eff | Rd_ph : phase eff
+type _ Stdlib.Effect.t += Rd_pt : Path.t t | Rd_ph : phase t
 
 (* environmental effects *)
-type _ eff +=
-  | Rd_env : Env.t eff
-  | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) eff
+type _ Stdlib.Effect.t +=
+  | Rd_env : Env.t t
+  | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) t
 
 (* memory effects in eval/eval_mult *)
-type _ eff +=
-  | Lookup_st : Path.t * Label.t -> (value * Job_q.t) eff
-  | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit eff
-  | Get_dec : Path.t -> decision eff
-  | Set_dec : Path.t * decision -> unit eff
-  | Enq_eff : Path.t * clos -> unit eff
+type _ Stdlib.Effect.t +=
+  | Lookup_st : Path.t * Label.t -> (value * Job_q.t) t
+  | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit t
+  | Get_dec : Path.t -> decision t
+  | Set_dec : Path.t * decision -> unit t
+  | Enq_eff : Path.t * clos -> unit t
 
 (* memory effects in render *)
-type _ eff +=
-  | Alloc_pt : Path.t eff
-  | Lookup_ent : Path.t -> entry eff
-  | Update_ent : Path.t * entry -> unit eff
+type _ Stdlib.Effect.t +=
+  | Alloc_pt : Path.t t
+  | Lookup_ent : Path.t -> entry t
+  | Update_ent : Path.t * entry -> unit t
 
 (* For testing nontermination *)
-type _ eff += Re_render_limit : int eff
+type _ Stdlib.Effect.t += Re_render_limit : int t
 
 exception Too_many_re_renders
 
-let re_render_limit_h (type a b) (f : b -> a) (x : b) : re_render_limit:int -> a
-    =
-  match f x with
-  | v -> fun ~re_render_limit:_ -> v
-  | effect Re_render_limit, k ->
-      fun ~re_render_limit -> continue k re_render_limit ~re_render_limit
+let re_render_limit_h : 'a. ('a, re_render_limit:int -> 'a) handler =
+  {
+    retc = (fun v ~re_render_limit:_ -> v);
+    exnc = raise;
+    effc =
+      (fun (type b) (eff : b t) ->
+        match eff with
+        | Re_render_limit ->
+            Some
+              (fun (k : (b, _) continuation) ~(re_render_limit : int) ->
+                continue k re_render_limit ~re_render_limit)
+        | _ -> None);
+  }
 
-let ptph_h (type a b) (f : b -> a) (x : b) : ptph:Path.t * phase -> a =
-  match f x with
-  | v ->
-      fun ~ptph ->
+let ptph_h =
+  {
+    retc =
+      (fun v ~ptph ->
         Logger.ptph ptph `Ret;
-        v
-  | effect Rd_pt, k ->
-      fun ~ptph ->
-        Logger.ptph ptph `Rd_pt;
-        continue k (fst ptph) ~ptph
-  | effect Rd_ph, k ->
-      fun ~ptph ->
-        Logger.ptph ptph `Rd_ph;
-        continue k (snd ptph) ~ptph
+        v);
+    exnc = raise;
+    effc =
+      (fun (type a) (eff : a t) ->
+        match eff with
+        | Rd_pt ->
+            Some
+              (fun (k : (a, _) continuation) ~(ptph : Path.t * phase) ->
+                Logger.ptph ptph `Rd_pt;
+                continue k (fst ptph) ~ptph)
+        | Rd_ph ->
+            Some
+              (fun (k : (a, _) continuation) ~(ptph : Path.t * phase) ->
+                Logger.ptph ptph `Rd_ph;
+                continue k (snd ptph) ~ptph)
+        | _ -> None);
+  }
 
-let rec env_h : type b a. (b -> a) -> b -> env:Env.t -> a =
- fun f x ->
-  match f x with
-  | v ->
-      fun ~env ->
+let rec env_h : 'a. ('a, env:Env.t -> 'a) handler =
+  {
+    retc =
+      (fun v ~env ->
         Logger.env env `Ret;
-        v
-  | effect Rd_env, k ->
-      fun ~env ->
-        Logger.env env `Rd_env;
-        continue k env ~env
-  | effect In_env env', k ->
-      fun ~env ->
-        Logger.env env (`In_env env');
-        continue k (env_h ~env:env') ~env
+        v);
+    exnc = raise;
+    effc =
+      (fun (type a) (eff : a t) ->
+        match eff with
+        | Rd_env ->
+            Some
+              (fun (k : (a, _) continuation) ~(env : Env.t) ->
+                Logger.env env `Rd_env;
+                continue k env ~env)
+        | In_env env' ->
+            Some
+              (fun (k : (a, _) continuation) ~(env : Env.t) ->
+                Logger.env env (`In_env env');
+                continue k (fun f x -> match_with f x env_h ~env:env') ~env)
+        | _ -> None);
+  }
 
-let mem_h (type a b) (f : b -> a) (x : b) : mem:Tree_mem.t -> a * Tree_mem.t =
-  match f x with
-  | v ->
-      fun ~mem ->
+let mem_h =
+  {
+    retc =
+      (fun v ~mem ->
         Logger.mem mem `Ret;
-        (v, mem)
-  (* in eval *)
-  | effect Lookup_st (path, label), k ->
-      fun ~mem ->
-        Logger.mem mem (`Lookup_st (path, label));
-        continue k (Tree_mem.lookup_st mem ~path ~label) ~mem
-  | effect Update_st (path, label, (v, q)), k ->
-      fun ~mem ->
-        Logger.mem mem (`Update_st (path, label, (v, q)));
-        continue k () ~mem:(Tree_mem.update_st mem ~path ~label (v, q))
-  | effect Get_dec path, k ->
-      fun ~mem ->
-        Logger.mem mem (`Get_dec path);
-        continue k (Tree_mem.get_dec mem ~path) ~mem
-  | effect Set_dec (path, dec), k ->
-      fun ~mem ->
-        Logger.mem mem (`Set_dec (path, dec));
-        continue k () ~mem:(Tree_mem.set_dec mem ~path dec)
-  | effect Enq_eff (path, clos), k ->
-      fun ~mem ->
-        Logger.mem mem (`Enq_eff (path, clos));
-        continue k () ~mem:(Tree_mem.enq_eff mem ~path clos)
-  (* in render *)
-  | effect Alloc_pt, k ->
-      fun ~mem ->
-        Logger.mem mem `Alloc_pt;
-        continue k (Tree_mem.alloc_pt mem) ~mem
-  | effect Lookup_ent path, k ->
-      fun ~mem ->
-        Logger.mem mem (`Lookup_ent path);
-        continue k (Tree_mem.lookup_ent mem ~path) ~mem
-  | effect Update_ent (path, ent), k ->
-      fun ~mem ->
-        Logger.mem mem (`Update_ent (path, ent));
-        continue k () ~mem:(Tree_mem.update_ent mem ~path ent)
+        (v, mem));
+    exnc = raise;
+    effc =
+      (fun (type a) (eff : a t) ->
+        match eff with
+        (* in eval *)
+        | Lookup_st (path, label) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Lookup_st (path, label));
+                continue k (Tree_mem.lookup_st mem ~path ~label) ~mem)
+        | Update_st (path, label, (v, q)) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Update_st (path, label, (v, q)));
+                continue k () ~mem:(Tree_mem.update_st mem ~path ~label (v, q)))
+        | Get_dec path ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Get_dec path);
+                continue k (Tree_mem.get_dec mem ~path) ~mem)
+        | Set_dec (path, dec) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Set_dec (path, dec));
+                continue k () ~mem:(Tree_mem.set_dec mem ~path dec))
+        | Enq_eff (path, clos) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Enq_eff (path, clos));
+                continue k () ~mem:(Tree_mem.enq_eff mem ~path clos))
+        (* in render *)
+        | Alloc_pt ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem `Alloc_pt;
+                continue k (Tree_mem.alloc_pt mem) ~mem)
+        | Lookup_ent path ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Lookup_ent path);
+                continue k (Tree_mem.lookup_ent mem ~path) ~mem)
+        | Update_ent (path, ent) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
+                Logger.mem mem (`Update_ent (path, ent));
+                continue k () ~mem:(Tree_mem.update_ent mem ~path ent))
+        | _ -> None);
+  }
 
 let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
@@ -254,7 +290,9 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
   let path = perform Rd_pt in
   match perform (Get_dec path) with
   | Retry ->
-      ptph_h (eval_mult ~re_render:(re_render + 1)) expr ~ptph:(path, P_retry)
+      match_with
+        (eval_mult ~re_render:(re_render + 1))
+        expr ptph_h ~ptph:(path, P_retry)
   | Idle | Update -> v
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
@@ -286,7 +324,9 @@ and render1 (vs : view_spec) : tree =
       perform (Update_ent (path, { part_view; children = [] }));
 
       let vss =
-        (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_init)) body
+        ( (eval_mult |> fun f x -> match_with f x env_h ~env) |> fun f x ->
+          match_with f x ptph_h ~ptph:(path, P_init) )
+          body
         |> vss_of_value_exn
       in
       render path vss;
@@ -310,7 +350,9 @@ let rec update (path : Path.t) (arg : value option) : bool =
             Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
           in
           let vss =
-            (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
+            ( (eval_mult |> fun f x -> match_with f x env_h ~env) |> fun f x ->
+              match_with f x ptph_h ~ptph:(path, P_update) )
+              body
             |> vss_of_value_exn
           in
 
@@ -368,7 +410,10 @@ let rec commit_effs (path : Path.t) : unit =
   | Root -> ()
   | Node { eff_q; _ } -> (
       Job_q.iter eff_q ~f:(fun { body; env; _ } ->
-          (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore);
+          ( (eval |> fun f x -> match_with f x env_h ~env) |> fun f x ->
+            match_with f x ptph_h ~ptph:(path, P_effect) )
+            body
+          |> ignore);
 
       (* Refetch the entry, as committing effects may change the entry *)
       let ent = perform (Lookup_ent path) in
@@ -397,7 +442,7 @@ let rec eval_top (prog : Prog.t) : view_spec list =
 
 let step_prog (prog : Prog.t) : Path.t =
   Logger.step_prog prog;
-  let vss = env_h eval_top prog ~env:Env.empty in
+  let vss = match_with eval_top prog env_h ~env:Env.empty in
   let path = perform Alloc_pt in
   perform (Update_ent (path, { part_view = Root; children = [] }));
   render path vss;
@@ -427,5 +472,5 @@ let run ?(fuel : int option) (prog : Prog.t) : run_info =
     loop ();
     !cnt
   in
-  let steps, mem = mem_h driver () ~mem:Tree_mem.empty in
+  let steps, mem = match_with driver () mem_h ~mem:Tree_mem.empty in
   { steps; mem }

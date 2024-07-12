@@ -24,7 +24,7 @@
  (depends
    ocaml
    dune
-   (ocaml-variants (= 5.1.1+effect-syntax))
+   (ocaml-base-compiler (= 5.2.0))
    menhir
    base
    fmt
