@@ -25,10 +25,11 @@
    ocaml
    dune
    (ocaml-base-compiler (= 5.2.0))
-   menhir
-   base
+   core
    fmt
    logs
+   menhir
+   ppx_jane
    stdio
    (alcotest :with-test))
  (tags

@@ -51,8 +51,7 @@ let mem mem = function
       Logs.debug (fun m ->
           m "mem_h Set_dec [mem: %a, path: %a, dec: %a]" Sexp.pp_hum
             (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path)
-            Sexp.pp_hum
-            (Value.sexp_of_decision dec))
+            Sexp.pp_hum (Decision.sexp_of_t dec))
   | `Enq_eff (path, clos) ->
       Logs.debug (fun m ->
           m "mem_h Enq_eff [mem: %a, path: %a, clos: %a]" Sexp.pp_hum
