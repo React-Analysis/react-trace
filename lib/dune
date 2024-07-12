@@ -1,7 +1,7 @@
 (library
  (name react_trace)
  (preprocess (pps ppx_jane))
- (libraries core logs ppx_jane))
+ (libraries core logs flow_parser ppx_jane))
 
 (ocamllex lexer)
 

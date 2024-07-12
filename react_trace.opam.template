@@ -1,0 +1,3 @@
+pin-depends: [
+  [ "flow_parser.0.239.1" "git+https://github.com/facebook/flow#5d1b246a1ac8a8fc4e431b835ab8fb7f6f5ebd30" ]
+]

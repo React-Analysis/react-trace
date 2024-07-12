@@ -26,6 +26,7 @@
    dune
    (ocaml-base-compiler (= 5.2.0))
    core
+   flow_parser
    fmt
    logs
    menhir

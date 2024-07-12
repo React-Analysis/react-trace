@@ -13,6 +13,7 @@ depends: [
   "dune" {>= "3.15"}
   "ocaml-base-compiler" {= "5.2.0"}
   "core"
+  "flow_parser"
   "fmt"
   "logs"
   "menhir"
@@ -36,3 +37,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/React-Analysis/ReacttRace.git"
+pin-depends: [
+  [ "flow_parser.0.239.1" "git+https://github.com/facebook/flow#5d1b246a1ac8a8fc4e431b835ab8fb7f6f5ebd30" ]
+]
