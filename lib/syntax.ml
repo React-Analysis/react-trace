@@ -11,6 +11,9 @@ module Label = Int
 module Expr = struct
   type hook_free = private Hook_free
   type hook_full = private Hook_full
+  type const = Unit | Bool of bool | Int of int
+  type uop = Not | Uplus | Uminus
+  type bop = Eq | Lt | Gt | Ne | Le | Ge | And | Or | Plus | Minus | Times
 
   type _ t =
     | Const : const -> _ t
@@ -32,10 +35,6 @@ module Expr = struct
     | Seq : 'a t * 'a t -> 'a t
     | Uop : { op : uop; arg : hook_free t } -> _ t
     | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ t
-
-  and const = Unit | Bool of bool | Int of int
-  and uop = Not | Uplus | Uminus
-  and bop = Eq | Lt | Gt | Ne | Le | Ge | And | Or | Plus | Minus | Times
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
