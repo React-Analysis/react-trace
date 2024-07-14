@@ -1,4 +1,4 @@
-open! Base
+open! Core
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open Syntax
@@ -194,7 +194,7 @@ let rec eval : type a. a Expr.t -> value =
           let phase = perform Rd_ph in
 
           let dec =
-            if Int.(path = self_pt) && Phase.(phase <> P_effect) then Retry
+            if path = self_pt && Phase.(phase <> P_effect) then Retry
             else Update
           in
           perform (Set_dec (path, dec));

@@ -1,4 +1,4 @@
-open! Base
+open! Core
 open Stdlib.Effect.Deep
 open React_trace
 

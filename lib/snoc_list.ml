@@ -1,4 +1,4 @@
-open! Base
+open! Core
 
 type 'a t = [] | Snoc of 'a t * 'a
 
@@ -27,3 +27,9 @@ let of_list (l : 'a list) : 'a t =
 
 let fold t ~(init : 'acc) ~(f : 'acc -> 'a -> 'acc) : 'acc =
   match t with [] -> init | l -> to_list l |> List.fold ~init ~f
+
+let sexp_of_t (sexp_of_a : 'a -> Sexp.t) (l : 'a t) : Sexp.t =
+  List.sexp_of_t sexp_of_a (to_list l)
+
+let t_of_sexp (a_of_sexp : Sexp.t -> 'a) (sexp : Sexp.t) : 'a t =
+  of_list (List.t_of_sexp a_of_sexp sexp)

@@ -1,27 +1,17 @@
-open! Base
+open! Core
 
 module Id = struct
-  include Util.Map_key (String)
+  include String
 
   let unit = "()"
 end
 
-module Label = struct
-  module T = Int
-  include T
-
-  module Map = struct
-    open Map
-    include M (T)
-
-    let empty = empty (module T)
-  end
-end
-
-type hook_free = private Hook_free
-type hook_full = private Hook_full
+module Label = Int
 
 module Expr = struct
+  type hook_free = private Hook_free
+  type hook_full = private Hook_full
+
   type _ t =
     | Const : const -> _ t
     | Var : Id.t -> _ t
@@ -47,6 +37,8 @@ module Expr = struct
   and uop = Not | Uplus | Uminus
   and bop = Eq | Lt | Gt | Ne | Le | Ge | And | Or | Plus | Minus | Times
 
+  type hook_free_t = hook_free t
+  type hook_full_t = hook_full t
   type some_expr = Ex : 'a t -> some_expr [@@unboxed]
 
   let rec hook_free (expr : some_expr) : hook_free t option =
@@ -139,11 +131,14 @@ module Expr = struct
     | Uop { op; arg } -> l [ a "Uop"; a (string_of_uop op); sexp_of_t arg ]
     | Bop { op; left; right } ->
         l [ a "Bop"; a (string_of_bop op); sexp_of_t left; sexp_of_t right ]
+
+  let sexp_of_hook_free_t = sexp_of_t
+  let sexp_of_hook_full_t = sexp_of_t
 end
 
 module Prog = struct
-  type t = Expr of hook_free Expr.t | Comp of (comp * t)
-  and comp = { name : Id.t; param : Id.t; body : hook_full Expr.t }
+  type t = Expr of Expr.hook_free_t | Comp of (comp * t)
+  and comp = { name : Id.t; param : Id.t; body : Expr.hook_full_t }
 
   let sexp_of_comp ({ name; param; body } : comp) : Sexp.t =
     let open Sexp_helper in
