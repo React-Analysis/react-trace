@@ -33,6 +33,7 @@ let () =
   let module Filename = Stdlib.Filename in
   let filename = ref "" in
   let opt_pp = ref false in
+  let opt_parse_js = ref false in
   let opt_fuel = ref None in
   let opt_verbosity = ref Logs.Info in
 
@@ -42,6 +43,9 @@ let () =
   let speclist =
     [
       ("-pp", Arg.Unit (fun _ -> opt_pp := true), "Pretty-print program");
+      ( "-parse-js",
+        Arg.Unit (fun _ -> opt_parse_js := true),
+        "Parse JS file with Flow" );
       ( "-verbose",
         Arg.Unit (fun _ -> opt_verbosity := Logs.Debug),
         "Verbose mode" );
@@ -50,6 +54,9 @@ let () =
   in
   Arg.parse speclist (fun x -> filename := x) usage_msg;
   if String.is_empty !filename then Arg.usage speclist usage_msg
+  else if !opt_parse_js then
+    let js_syntax, _ = Js_syntax.parse !filename in
+    print_endline (Js_syntax.show js_syntax)
   else (
     Fmt_tty.setup_std_outputs ();
     Logs.set_reporter (Logs_fmt.reporter ());
