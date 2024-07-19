@@ -85,85 +85,102 @@ let convert_logical_op (op : Flow_ast.Expression.Logical.operator) :
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.some_expr =
   let open Syntax.Expr in
-  List.rev body
-  |> List.fold ~init:(Ex (Const Unit)) ~f:(fun tail (_, stmt) ->
-         match stmt with
-         | Block { body; _ } ->
-             let body = convert_stat_list body in
-             some_seq body tail
-         | Break _ -> failwith "TODO"
-         | ClassDeclaration _ -> failwith "TODO"
-         | ComponentDeclaration _ -> failwith "TODO"
-         | Continue _ -> failwith "TODO"
-         | Debugger _ -> tail
-         | DeclareClass _ | DeclareComponent _ | DeclareEnum _
-         | DeclareExportDeclaration _ | DeclareFunction _ | DeclareInterface _
-         | DeclareModule _ | DeclareModuleExports _ | DeclareNamespace _
-         | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
-             (* flow statements starting with 'declare' *)
-             tail
-         | DoWhile _ -> failwith "TODO"
-         | Empty _ -> tail
-         | EnumDeclaration _ -> failwith "TODO"
-         | ExportDefaultDeclaration _ -> failwith "TODO"
-         | ExportNamedDeclaration _ -> failwith "TODO"
-         | Expression { expression; _ } ->
-             let expr = convert_expr expression in
-             some_seq expr tail
-         | For _ -> failwith "TODO"
-         | ForIn _ -> failwith "TODO"
-         | ForOf _ -> failwith "TODO"
-         | FunctionDeclaration f -> (
-             let expr = convert_func f in
-             match f.id with
-             | Some (_, { name; _ }) ->
-                 let expr = expr |> hook_free |> get_exn in
-                 let (Ex tail) = tail in
-                 Ex (Let { id = name; bound = expr; body = tail })
-             | None -> some_seq expr tail)
-         | If { test; consequent; alternate; _ } ->
-             let test = convert_expr test |> hook_free |> get_exn in
-             let consequent =
-               convert_stat_list [ consequent ] |> hook_free |> get_exn
-             in
-             let alternate =
-               match alternate with
-               | Some (_, { body; _ }) ->
-                   convert_stat_list [ body ] |> hook_free |> get_exn
-               | None -> Const Unit
-             in
-             some_seq
-               (Ex (Cond { pred = test; con = consequent; alt = alternate }))
-               tail
-         | ImportDeclaration _ -> failwith "TODO"
-         | InterfaceDeclaration _ -> failwith "TODO"
-         | Labeled _ ->
-             (* TODO: handle labeled statement *)
-             tail
-         | Return _ -> failwith "TODO"
-         | Switch _ -> failwith "TODO"
-         | Throw _ -> failwith "TODO"
-         | Try _ -> failwith "TODO"
-         | TypeAlias _ | OpaqueType _ ->
-             (* flow type declaration *)
-             tail
-         | VariableDeclaration { declarations; _ } ->
-             let decls =
-               List.concat_map declarations ~f:(fun (_, { id; init; _ }) ->
-                   let base_name = fresh () in
-                   let init =
-                     match init with
-                     | Some expr -> convert_expr expr |> hook_free |> get_exn
-                     | None -> Const Unit
-                   in
-                   let base_binding = (base_name, init) in
-                   let pattern_bindings = convert_pattern id ~base_name in
-                   base_binding :: pattern_bindings)
-             in
-             List.fold decls ~init:tail ~f:(fun (Ex tail) (name, expr) ->
-                 Ex (Let { id = name; bound = expr; body = tail }))
-         | While _ -> failwith "TODO"
-         | With _ -> failwith "TODO")
+  let rec convert_stat tail ((_, stmt) : (Loc.t, Loc.t) Flow_ast.Statement.t) =
+    match stmt with
+    | Block { body; _ } ->
+        let body = convert_stat_list body in
+        some_seq body tail
+    | Break _ -> failwith "TODO"
+    | ClassDeclaration _ -> failwith "TODO"
+    | ComponentDeclaration _ -> failwith "TODO"
+    | Continue _ -> failwith "TODO"
+    | Debugger _ -> tail
+    | DeclareClass _ | DeclareComponent _ | DeclareEnum _
+    | DeclareExportDeclaration _ | DeclareFunction _ | DeclareInterface _
+    | DeclareModule _ | DeclareModuleExports _ | DeclareNamespace _
+    | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
+        (* flow statements starting with 'declare' *)
+        tail
+    | DoWhile _ -> failwith "TODO"
+    | Empty _ -> tail
+    | EnumDeclaration _ -> failwith "TODO"
+    | ExportDefaultDeclaration { declaration; _ } -> (
+        (* TODO: handle export default declaration *)
+        match declaration with
+        | Declaration stmt ->
+            (* delegate to var and function declaration *)
+            convert_stat tail stmt
+        | Expression expr -> some_seq (convert_expr expr) tail)
+    | ExportNamedDeclaration { declaration; _ } -> (
+        (* TODO: handle export named declaration, especially those without
+           declaration *)
+        match declaration with
+        | Some stmt ->
+            (* delegate to var and function declaration *)
+            convert_stat tail stmt
+        | None -> tail)
+    | Expression { expression; _ } ->
+        let expr = convert_expr expression in
+        some_seq expr tail
+    | For _ -> failwith "TODO"
+    | ForIn _ -> failwith "TODO"
+    | ForOf _ -> failwith "TODO"
+    | FunctionDeclaration f -> (
+        let expr = convert_func f in
+        match f.id with
+        | Some (_, { name; _ }) ->
+            let expr = expr |> hook_free |> get_exn in
+            let (Ex tail) = tail in
+            Ex (Let { id = name; bound = expr; body = tail })
+        | None -> some_seq expr tail)
+    | If { test; consequent; alternate; _ } ->
+        let test = convert_expr test |> hook_free |> get_exn in
+        let consequent =
+          convert_stat_list [ consequent ] |> hook_free |> get_exn
+        in
+        let alternate =
+          match alternate with
+          | Some (_, { body; _ }) ->
+              convert_stat_list [ body ] |> hook_free |> get_exn
+          | None -> Const Unit
+        in
+        some_seq
+          (Ex (Cond { pred = test; con = consequent; alt = alternate }))
+          tail
+    | ImportDeclaration _ -> failwith "TODO"
+    | InterfaceDeclaration _ -> failwith "TODO"
+    | Labeled _ ->
+        (* TODO: handle labeled statement *)
+        tail
+    | Return _ -> failwith "TODO"
+    | Switch _ -> failwith "TODO"
+    | Throw _ -> failwith "TODO"
+    | Try _ -> failwith "TODO"
+    | TypeAlias _ | OpaqueType _ ->
+        (* flow type declaration *)
+        tail
+    | VariableDeclaration { declarations; _ } ->
+        let decls =
+          List.concat_map declarations ~f:(fun (_, { id; init; _ }) ->
+              let init =
+                match init with
+                | Some expr -> convert_expr expr |> hook_free |> get_exn
+                | None -> Const Unit
+              in
+              match id with
+              | _, Identifier { name = _, { name; _ }; _ } -> [ (name, init) ]
+              | _ ->
+                  let base_name = fresh () in
+                  let base_binding = (base_name, init) in
+                  let pattern_bindings = convert_pattern id ~base_name in
+                  base_binding :: pattern_bindings)
+        in
+        List.fold decls ~init:tail ~f:(fun (Ex tail) (name, expr) ->
+            Ex (Let { id = name; bound = expr; body = tail }))
+    | While _ -> failwith "TODO"
+    | With _ -> failwith "TODO"
+  in
+  List.rev body |> List.fold ~init:(Ex (Const Unit)) ~f:convert_stat
 
 and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
     Syntax.Expr.some_expr =
@@ -173,8 +190,14 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
     | _, { params = [ (_, { argument; default = None }) ]; _ } -> argument
     | _ -> failwith "TODO: non-single or optional parameter"
   in
-  let param_name = fresh () in
-  let param_bindings = convert_pattern param ~base_name:param_name in
+  let param_name, param_bindings =
+    match param with
+    | _, Identifier { name = _, { name; _ }; _ } -> (name, [])
+    | _ ->
+        let param_name = fresh () in
+        let param_bindings = convert_pattern param ~base_name:param_name in
+        (param_name, param_bindings)
+  in
   let body =
     match body with
     | BodyBlock (_, { body; _ }) -> convert_stat_list body
