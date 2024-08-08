@@ -2,7 +2,7 @@ open! Core
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open Syntax
-open Domains
+open Concrete_domains
 
 exception Unbound_var of string
 exception Type_error
@@ -194,7 +194,7 @@ let rec eval : type a. a Expr.t -> value =
           let phase = perform Rd_ph in
 
           let dec =
-            if path = self_pt && Phase.(phase <> P_effect) then Retry
+            if Path.(path = self_pt) && Phase.(phase <> P_effect) then Retry
             else Update
           in
           perform (Set_dec (path, dec));
