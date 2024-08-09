@@ -3,12 +3,4 @@ let C x =
   eff (setS (fun s -> 0));
   view [()]
 ;;
-let D x =
-  stt s, setS = true in
-  eff (setS (fun s -> false));
-  if s then
-    view [C ()]
-  else
-    view [C (), C ()]
-;;
-view [D ()]
+view [C ()]
