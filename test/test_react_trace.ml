@@ -537,6 +537,21 @@ view [C ()]
   let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
+let updating_obj_without_set_does_not_rerender () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = (let r = {} in r.x := 42; r) in
+  eff (s.x := 43);
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
+
 let () =
   let open Alcotest in
   run "Interpreter"
@@ -593,5 +608,7 @@ let () =
           test_case "New child steps again" `Quick new_child_steps_again;
           test_case "Guarded set with obj in effect should step five times" `Quick
             set_in_effect_guarded_step_n_times_with_obj;
+          test_case "Updating object without set should step one time" `Quick
+            updating_obj_without_set_does_not_rerender;
         ] );
     ]
