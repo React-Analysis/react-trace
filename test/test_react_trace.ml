@@ -233,6 +233,24 @@ let parse_op () =
                right = Const (Bool true);
              }))
 
+let parse_obj () =
+  let open Syntax in
+  let (Ex expr) = parse_expr "let x = {} in x.y := 3; x.y" in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Expr.sexp_of_t expr)
+    ~expected:
+      Expr.(
+        sexp_of_t
+          (Let
+             {
+               id = "x";
+               bound = Alloc;
+               body =
+                 Seq
+                   ( Set { obj = Var "x"; field = "y"; value = Const (Int 3) },
+                     Get { obj = Var "x"; field = "y" } );
+             }))
+
 let no_side_effect () =
   let prog =
     parse_prog {|
@@ -504,6 +522,21 @@ view [D ()]
   let { Interp.steps; _ } = Interp.run ~fuel prog in
   Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
 
+let set_in_effect_guarded_step_n_times_with_obj () =
+  let prog =
+    parse_prog
+      {|
+let C x =
+  stt s, setS = (let r = {} in r.x := 42; r) in
+  eff (if s.x <= 45 then setS (fun s -> (let r = {} in r.x := s.x + 1; r)));
+  view [()]
+;;
+view [C ()]
+|}
+  in
+  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
+
 let () =
   let open Alcotest in
   run "Interpreter"
@@ -525,6 +558,7 @@ let () =
           test_case "eff" `Quick parse_eff;
           test_case "seq" `Quick parse_seq;
           test_case "op" `Quick parse_op;
+          test_case "obj" `Quick parse_obj;
         ] );
       ( "steps",
         [
@@ -557,5 +591,7 @@ let () =
             set_in_removed_child_step_two_times;
           test_case "Same child gets persisted" `Quick state_persists_in_child;
           test_case "New child steps again" `Quick new_child_steps_again;
+          test_case "Guarded set with obj in effect should step five times" `Quick
+            set_in_effect_guarded_step_n_times_with_obj;
         ] );
     ]

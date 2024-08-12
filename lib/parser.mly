@@ -17,6 +17,7 @@ and label_stts_expr label = function
 %token UNIT TRUE FALSE
 %token <int> INT
 %token <string> ID
+%token RECORD DOT ASSIGN
 %token VIEW
 %token FUN LET STT IN EFF
 %token IF THEN ELSE
@@ -30,6 +31,7 @@ and label_stts_expr label = function
 %nonassoc RARROW
 %nonassoc IN
 %right    SEMI
+%nonassoc ASSIGN
 %nonassoc EFF
 %nonassoc THEN /* below ELSE (if ... then ...) */
 %nonassoc ELSE /* (if ... then ... else ...) */
@@ -76,6 +78,10 @@ expr_:
     | op = uop; expr_ = expr_ %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr_ }) }
     | left = expr_; op = bop; right = expr_
       { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
+    | RECORD { Ex (Alloc) }
+    | obj = expr_; DOT; field = var { Ex (Get { obj = hook_free_exn obj; field }) }
+    | obj = expr_; DOT; field = var; ASSIGN; value = expr_
+      { Ex (Set { obj = hook_free_exn obj; field; value = hook_free_exn value }) }
 %inline uop:
     | NOT { Not }
     | PLUS { Uplus }

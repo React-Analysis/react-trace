@@ -4,6 +4,9 @@ open Syntax
 module type T = sig
   type path
   type env
+  type loc
+  type obj
+  type memory
   type st_store
   type job_q
   type clos = { param : Id.t; body : Expr.hook_free_t; env : env }
@@ -14,6 +17,7 @@ module type T = sig
     | Unit
     | Bool of bool
     | Int of int
+    | Loc of loc
     | View_spec of view_spec list
     | Clos of clos
     | Set_clos of set_clos
@@ -49,6 +53,8 @@ module type T = sig
   val sexp_of_part_view : part_view -> Sexp.t
   val sexp_of_tree : tree -> Sexp.t
   val sexp_of_entry : entry -> Sexp.t
+  val sexp_of_loc : loc -> Sexp.t
+  val sexp_of_obj : obj -> Sexp.t
 end
 
 module type Path = sig
@@ -69,6 +75,39 @@ module type Env = sig
   val empty : t
   val lookup : t -> id:Id.t -> value option
   val extend : t -> id:Id.t -> value:value -> t
+  val sexp_of_t : t -> Sexp.t
+end
+
+module type Loc = sig
+  type t
+  type comparator_witness
+
+  val comparator : (t, comparator_witness) Comparator.t
+  val sexp_of_t : t -> Sexp.t
+  val equal : t -> t -> bool
+  val ( = ) : t -> t -> bool
+  val ( <> ) : t -> t -> bool
+end
+
+module type Obj = sig
+  type value
+  type t
+
+  val empty : t
+  val lookup : t -> field:Id.t -> value
+  val update : t -> field:Id.t -> value:value -> t
+  val sexp_of_t : t -> Sexp.t
+end
+
+module type Memory = sig
+  type obj
+  type loc
+  type t
+
+  val empty : t
+  val alloc : t -> loc
+  val lookup : t -> loc:loc -> obj
+  val update : t -> loc:loc -> obj:obj -> t
   val sexp_of_t : t -> Sexp.t
 end
 
@@ -142,6 +181,11 @@ module type S = sig
   include T
   module Path : Path with type t = path
   module Env : Env with type value = value and type t = env
+  module Loc : Loc with type t = loc
+  module Obj : Obj with type value = value and type t = obj
+
+  module Memory :
+    Memory with type obj = obj and type loc = loc and type t = memory
 
   module St_store :
     St_store

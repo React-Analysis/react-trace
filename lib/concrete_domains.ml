@@ -5,6 +5,9 @@ module M : Domains.S = struct
   module rec T : (Domains.T with type path = int) = struct
     type path = Path.t [@@deriving sexp_of]
     type env = Env.t [@@deriving sexp_of]
+    type loc = Loc.t [@@deriving sexp_of]
+    type obj = Obj.t [@@deriving sexp_of]
+    type memory = Memory.t [@@deriving sexp_of]
     type st_store = St_store.t [@@deriving sexp_of]
     type job_q = Job_q.t [@@deriving sexp_of]
 
@@ -15,6 +18,7 @@ module M : Domains.S = struct
       | Unit
       | Bool of bool
       | Int of int
+      | Loc of Loc.t
       | View_spec of view_spec list
       | Clos of clos
       | Set_clos of set_clos
@@ -57,6 +61,36 @@ module M : Domains.S = struct
     let empty = Id.Map.empty
     let lookup env ~id = Map.find env id
     let extend env ~id ~value = Map.set env ~key:id ~data:value
+  end
+
+  and Loc : (Domains.Loc with type t = T.loc) = Int
+
+  and Obj :
+    (Domains.Obj with type value = T.value and type t = T.obj) = struct
+    type value = T.value [@@deriving sexp_of]
+    type t = value Id.Map.t [@@deriving sexp_of]
+
+    let empty = Id.Map.empty
+
+    let lookup obj ~field =
+      Map.find obj field |> Option.value ~default:T.Unit
+
+    let update obj ~field ~value = Map.set obj ~key:field ~data:value
+  end
+
+  and Memory :
+    (Domains.Memory
+      with type obj = T.obj
+       and type loc = T.loc
+       and type t = T.memory) = struct
+    type obj = T.obj [@@deriving sexp_of]
+    type loc = T.loc [@@deriving sexp_of]
+    type t = obj Map.M(Loc).t [@@deriving sexp_of]
+
+    let empty = Map.empty (module Loc)
+    let alloc = Map.length
+    let lookup memory ~loc = Map.find_exn memory loc
+    let update memory ~loc ~obj = Map.set memory ~key:loc ~data:obj
   end
 
   and St_store :
@@ -167,6 +201,7 @@ module M : Domains.S = struct
       | Unit, Unit -> true
       | Bool b1, Bool b2 -> Bool.(b1 = b2)
       | Int i1, Int i2 -> i1 = i2
+      | Loc l1, Loc l2 -> Loc.(l1 = l2)
       | _, _ -> false
 
     let ( = ) = equal

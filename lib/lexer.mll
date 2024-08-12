@@ -41,6 +41,9 @@ rule read =
   | "()"      { UNIT }
   | int as n  { INT (int_of_string n) }
   | id as s   { match Hashtbl.find_opt keywords s with Some s -> s | None -> ID s }
+  | "{}"      { RECORD }
+  | '.'       { DOT }
+  | ":="      { ASSIGN }
   | '#'       { comment lexbuf }
   | "->"      { RARROW }
   | '='       { EQ }

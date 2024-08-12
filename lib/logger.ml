@@ -31,44 +31,66 @@ let env env = function
 let mem mem = function
   | `Ret ->
       Logs.debug (fun m ->
-          m "mem_h Ret [mem: %a]" Sexp.pp_hum (Tree_mem.sexp_of_t mem))
+          m "mem_h Ret [mem: %a]" Sexp.pp_hum (Memory.sexp_of_t mem))
+  | `Lookup_loc loc ->
+      Logs.debug (fun m ->
+          m "mem_h Lookup_loc [mem: %a, loc: %a]" Sexp.pp_hum
+            (Memory.sexp_of_t mem) Sexp.pp_hum (Loc.sexp_of_t loc))
+  | `Update_loc (loc, obj) ->
+      Logs.debug (fun m ->
+          m "mem_h Update_loc [mem: %a, loc: %a, obj: %a]" Sexp.pp_hum
+            (Memory.sexp_of_t mem) Sexp.pp_hum (Loc.sexp_of_t loc) Sexp.pp_hum
+            (Obj.sexp_of_t obj))
+  | `Alloc_loc ->
+      Logs.debug (fun m ->
+          m "mem_h Alloc_loc [mem: %a]" Sexp.pp_hum (Memory.sexp_of_t mem))
+
+let treemem treemem = function
+  | `Ret ->
+      Logs.debug (fun m ->
+          m "treemem_h Ret [treemem: %a]" Sexp.pp_hum (Tree_mem.sexp_of_t treemem))
   | `Lookup_st (path, label) ->
       Logs.debug (fun m ->
-          m "mem_h Lookup_st [mem: %a, path: %a, label: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path)
-            Sexp.pp_hum (Label.sexp_of_t label))
+          m "treemem_h Lookup_st [treemem: %a, path: %a, label: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum
+            (Label.sexp_of_t label))
   | `Update_st (path, label, (v, q)) ->
       Logs.debug (fun m ->
-          m "mem_h Update_st [mem: %a, path: %a, label: %a, v: %a, q: %a]"
-            Sexp.pp_hum (Tree_mem.sexp_of_t mem) Sexp.pp_hum
-            (Path.sexp_of_t path) Sexp.pp_hum (Label.sexp_of_t label)
-            Sexp.pp_hum (sexp_of_value v) Sexp.pp_hum (Job_q.sexp_of_t q))
+          m "treemem_h Update_st [treemem: %a, path: %a, label: %a, v: %a, q: %a]"
+            Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum
+            (Label.sexp_of_t label) Sexp.pp_hum (sexp_of_value v) Sexp.pp_hum
+            (Job_q.sexp_of_t q))
   | `Get_dec path ->
       Logs.debug (fun m ->
-          m "mem_h Get_dec [mem: %a, path: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path))
+          m "treemem_h Get_dec [treemem: %a, path: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path))
   | `Set_dec (path, dec) ->
       Logs.debug (fun m ->
-          m "mem_h Set_dec [mem: %a, path: %a, dec: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path)
-            Sexp.pp_hum (sexp_of_decision dec))
+          m "treemem_h Set_dec [treemem: %a, path: %a, dec: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum (sexp_of_decision dec))
   | `Enq_eff (path, clos) ->
       Logs.debug (fun m ->
-          m "mem_h Enq_eff [mem: %a, path: %a, clos: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path)
-            Sexp.pp_hum (sexp_of_clos clos))
+          m "treemem_h Enq_eff [treemem: %a, path: %a, clos: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum (sexp_of_clos clos))
   | `Alloc_pt ->
       Logs.debug (fun m ->
-          m "mem_h Alloc_pt [mem: %a]" Sexp.pp_hum (Tree_mem.sexp_of_t mem))
+          m "treemem_h Alloc_pt [treemem: %a]" Sexp.pp_hum (Tree_mem.sexp_of_t treemem))
   | `Lookup_ent path ->
       Logs.debug (fun m ->
-          m "mem_h Lookup_ent [mem: %a, path: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path))
+          m "treemem_h Lookup_ent [treemem: %a, path: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path))
   | `Update_ent (path, ent) ->
       Logs.debug (fun m ->
-          m "mem_h Update_ent [mem: %a, path: %a, ent: %a]" Sexp.pp_hum
-            (Tree_mem.sexp_of_t mem) Sexp.pp_hum (Path.sexp_of_t path)
-            Sexp.pp_hum (sexp_of_entry ent))
+          m "treemem_h Update_ent [treemem: %a, path: %a, ent: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum (sexp_of_entry ent))
 
 let eval expr =
   Logs.debug (fun m -> m "eval %a" Sexp.pp_hum (Expr.sexp_of_t expr))
