@@ -251,6 +251,40 @@ let parse_obj () =
                      Get { obj = Var "x"; field = "y" } );
              }))
 
+let parse_indexing () =
+  let open Syntax in
+  let (Ex expr) = parse_expr "let x = {} in x[2+2] := 1; x[4] + 1" in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Expr.sexp_of_t expr)
+    ~expected:
+      Expr.(
+        sexp_of_t
+          (Let
+             {
+               id = "x";
+               bound = Alloc;
+               body =
+                 Seq
+                   ( SetIdx
+                       {
+                         obj = Var "x";
+                         idx =
+                           Bop
+                             {
+                               op = Plus;
+                               left = Const (Int 2);
+                               right = Const (Int 2);
+                             };
+                         value = Const (Int 1);
+                       },
+                     Bop
+                       {
+                         op = Plus;
+                         left = GetIdx { obj = Var "x"; idx = Const (Int 4) };
+                         right = Const (Int 1);
+                       } );
+             }))
+
 let no_side_effect () =
   let prog =
     parse_prog {|
@@ -574,6 +608,7 @@ let () =
           test_case "seq" `Quick parse_seq;
           test_case "op" `Quick parse_op;
           test_case "obj" `Quick parse_obj;
+          test_case "indexing" `Quick parse_indexing;
         ] );
       ( "steps",
         [
@@ -606,8 +641,8 @@ let () =
             set_in_removed_child_step_two_times;
           test_case "Same child gets persisted" `Quick state_persists_in_child;
           test_case "New child steps again" `Quick new_child_steps_again;
-          test_case "Guarded set with obj in effect should step five times" `Quick
-            set_in_effect_guarded_step_n_times_with_obj;
+          test_case "Guarded set with obj in effect should step five times"
+            `Quick set_in_effect_guarded_step_n_times_with_obj;
           test_case "Updating object without set should step one time" `Quick
             updating_obj_without_set_does_not_rerender;
         ] );

@@ -38,6 +38,13 @@ module Expr = struct
     | Alloc : _ t
     | Get : { obj : hook_free t; field : Id.t } -> _ t
     | Set : { obj : hook_free t; field : Id.t; value : hook_free t } -> _ t
+    | GetIdx : { obj : hook_free t; idx : hook_free t } -> _ t
+    | SetIdx : {
+        obj : hook_free t;
+        idx : hook_free t;
+        value : hook_free t;
+      }
+        -> _ t
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
@@ -65,7 +72,9 @@ module Expr = struct
     | (Uop _ as e)
     | (Alloc as e)
     | (Get _ as e)
-    | (Set _ as e) ->
+    | (Set _ as e)
+    | (GetIdx _ as e)
+    | (SetIdx _ as e) ->
         Some e
 
   let hook_free_exn e = Option.value_exn (hook_free e)
@@ -92,7 +101,9 @@ module Expr = struct
     | (Bop _ as e)
     | (Alloc as e)
     | (Get _ as e)
-    | (Set _ as e) ->
+    | (Set _ as e)
+    | (GetIdx _ as e)
+    | (SetIdx _ as e) ->
         e
 
   let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
@@ -140,10 +151,12 @@ module Expr = struct
     | Bop { op; left; right } ->
         l [ a "Bop"; a (string_of_bop op); sexp_of_t left; sexp_of_t right ]
     | Alloc -> a "Alloc"
-    | Get { obj; field } ->
-        l [ a "Get"; sexp_of_t obj; Id.sexp_of_t field ]
+    | Get { obj; field } -> l [ a "Get"; sexp_of_t obj; Id.sexp_of_t field ]
     | Set { obj; field; value } ->
         l [ a "Set"; sexp_of_t obj; Id.sexp_of_t field; sexp_of_t value ]
+    | GetIdx { obj; idx } -> l [ a "GetIdx"; sexp_of_t obj; sexp_of_t idx ]
+    | SetIdx { obj; idx; value } ->
+        l [ a "SetIdx"; sexp_of_t obj; sexp_of_t idx; sexp_of_t value ]
 
   let sexp_of_hook_free_t = sexp_of_t
   let sexp_of_hook_full_t = sexp_of_t

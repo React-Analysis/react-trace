@@ -148,10 +148,12 @@ end
 module type Value = sig
   type view_spec
   type clos
+  type loc
   type t
 
   val to_bool : t -> bool option
   val to_int : t -> int option
+  val to_loc : t -> loc option
   val to_vs : t -> view_spec option
   val to_vss : t -> view_spec list option
   val to_clos : t -> clos option
@@ -209,6 +211,7 @@ module type S = sig
       with type view_spec = view_spec
        and type clos = clos
        and type t = value
+       and type loc = loc
 
   module Phase : Phase with type t = phase
   module Decision : Decision with type t = decision

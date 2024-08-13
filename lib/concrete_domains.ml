@@ -65,16 +65,12 @@ module M : Domains.S = struct
 
   and Loc : (Domains.Loc with type t = T.loc) = Int
 
-  and Obj :
-    (Domains.Obj with type value = T.value and type t = T.obj) = struct
+  and Obj : (Domains.Obj with type value = T.value and type t = T.obj) = struct
     type value = T.value [@@deriving sexp_of]
     type t = value Id.Map.t [@@deriving sexp_of]
 
     let empty = Id.Map.empty
-
-    let lookup obj ~field =
-      Map.find obj field |> Option.value ~default:T.Unit
-
+    let lookup obj ~field = Map.find obj field |> Option.value ~default:T.Unit
     let update obj ~field ~value = Map.set obj ~key:field ~data:value
   end
 
@@ -182,10 +178,12 @@ module M : Domains.S = struct
   module Value = struct
     type nonrec view_spec = view_spec
     type nonrec clos = clos
+    type nonrec loc = loc
     type t = value
 
     let to_bool = function Bool b -> Some b | _ -> None
     let to_int = function Int i -> Some i | _ -> None
+    let to_loc = function Loc l -> Some l | _ -> None
 
     let to_vs = function
       | Unit -> Some Vs_null

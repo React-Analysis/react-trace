@@ -82,6 +82,9 @@ expr_:
     | obj = expr_; DOT; field = var { Ex (Get { obj = hook_free_exn obj; field }) }
     | obj = expr_; DOT; field = var; ASSIGN; value = expr_
       { Ex (Set { obj = hook_free_exn obj; field; value = hook_free_exn value }) }
+    | obj = expr_; LBRACK; index = expr_; RBRACK { Ex (GetIdx { obj = hook_free_exn obj; idx = hook_free_exn index }) }
+    | obj = expr_; LBRACK; index = expr_; RBRACK; ASSIGN; value = expr_
+      { Ex (SetIdx { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value }) }
 %inline uop:
     | NOT { Not }
     | PLUS { Uplus }

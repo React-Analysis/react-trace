@@ -231,8 +231,26 @@ and convert_call (callee : Syntax.Expr.hook_free_t)
 
 and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
     Syntax.Expr.some_expr =
+  let open Syntax.Expr in
   match expr with
-  | Array _ -> failwith "TODO"
+  | Array { elements; _ } ->
+      let arr = fresh () in
+      let asgns =
+        List.mapi elements ~f:(fun i element ->
+            match element with
+            | Expression expr ->
+                let elem =
+                  convert_expr expr |> Syntax.Expr.hook_free |> get_exn
+                in
+                SetIdx { obj = Var arr; idx = Const (Int i); value = elem }
+            | _ -> failwith "TODO")
+      in
+      let asgns =
+        asgns |> List.rev
+        |> List.fold ~init:(Var arr) ~f:(fun last_expr asgn ->
+               Seq (asgn, last_expr))
+      in
+      Ex (Let { id = arr; bound = Alloc; body = asgns })
   | Function f | ArrowFunction f -> convert_func f
   | AsConstExpression { expression; _ } -> convert_expr expression
   | AsExpression { expression; _ } -> convert_expr expression
@@ -333,7 +351,7 @@ let convert_component_decl (_ast : (Loc.t, Loc.t) Flow_ast.Function.t) :
 
 let convert (js_ast : js_ast) : Syntax.Prog.t =
   let _, { Flow_ast.Program.statements; _ } = js_ast in
-  let (comps : Syntax.Prog.comp list), stats =
+  let comps, stats =
     List.partition_map statements ~f:(fun stmt ->
         let _, stmt' = stmt in
         match stmt' with
