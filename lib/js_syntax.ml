@@ -304,7 +304,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | New _ -> failwith "TODO"
   | Object _ -> failwith "TODO"
   | OptionalCall { optional; call = { callee; arguments; _ }; _ } ->
-      (* f?.(x) --> let _f = f in (if _f = () then () else (_f x)) *)
+      (* f?.(x) --> let f' = f in (if f' = () then () else (f' x)) *)
       let callee = convert_expr callee |> Syntax.Expr.hook_free |> get_exn in
       let name = fresh () in
       if optional then

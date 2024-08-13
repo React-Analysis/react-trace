@@ -396,11 +396,11 @@ let js_literal () =
 
 let js_jsx () =
   let open Syntax in
-  let js, _ = parse_js "<Comp />" in
+  let js, _ = parse_js "<></>; <Comp />" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "Comp (); ()" |> Prog.sexp_of_t)
+    ~expected:(parse_prog "(); Comp (); ()" |> Prog.sexp_of_t)
 
 let js_op () =
   let open Syntax in
@@ -427,6 +427,15 @@ let js_optcall () =
     ~expected:
       (parse_prog "(let a' = a in if a' = () then () else a'(b)); ()"
       |> normalize_prog)
+
+let js_cond () =
+  let js, _ = parse_js "if (a) b; else c;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj"
+    ~actual:(Syntax.Prog.sexp_of_t prog)
+    ~expected:
+      (parse_prog "if a then (b; ()) else (c; ()); ()" |> Syntax.Prog.sexp_of_t)
 
 let no_side_effect () =
   let prog =
@@ -760,6 +769,7 @@ let () =
           test_case "jsx" `Quick js_jsx;
           test_case "binop" `Quick js_op;
           test_case "optcall" `Quick js_optcall;
+          test_case "cond" `Quick js_cond;
         ] );
       ( "steps",
         [
