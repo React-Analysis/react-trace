@@ -12,6 +12,99 @@ let parse_expr s =
   let lexbuf = Lexing.from_string s in
   Parser.expr Lexer.read lexbuf
 
+let parse_js s =
+  Parser_flow.program_file ~fail:false
+    ~parse_options:
+      (Some { Parser_env.default_parse_options with components = true })
+    s None
+
+let rec extract_names_in_expr :
+    type a. a Syntax.Expr.t -> a Syntax.Expr.t * string list =
+  let open Syntax.Expr in
+  fun e ->
+    match e with
+    | Const _ -> (e, [])
+    | Var id -> (Var "_", [ id ])
+    | View es ->
+        let es, names = List.map es ~f:extract_names_in_expr |> List.unzip in
+        (View es, List.concat names)
+    | Cond { pred; con; alt } ->
+        let pred, pred_names = extract_names_in_expr pred in
+        let con, con_names = extract_names_in_expr con in
+        let alt, alt_names = extract_names_in_expr alt in
+        (Cond { pred; con; alt }, pred_names @ con_names @ alt_names)
+    | Fn { param; body } ->
+        let body, names = extract_names_in_expr body in
+        (Fn { param; body }, param :: names)
+    | App { fn; arg } ->
+        let fn, fn_names = extract_names_in_expr fn in
+        let arg, arg_names = extract_names_in_expr arg in
+        (App { fn; arg }, fn_names @ arg_names)
+    | Let { id; bound; body } ->
+        let bound, bound_names = extract_names_in_expr bound in
+        let body, body_names = extract_names_in_expr body in
+        (Let { id = "_"; bound; body }, (id :: bound_names) @ body_names)
+    | Stt { stt; set; init; body; _ } ->
+        let init, init_names = extract_names_in_expr init in
+        let body, body_names = extract_names_in_expr body in
+        ( Stt { stt = "_"; set = "_"; init; body; label = 0 },
+          (stt :: set :: init_names) @ body_names )
+    | Eff e ->
+        let e, names = extract_names_in_expr e in
+        (Eff e, names)
+    | Seq (e1, e2) ->
+        let e1, e1_names = extract_names_in_expr e1 in
+        let e2, e2_names = extract_names_in_expr e2 in
+        (Seq (e1, e2), e1_names @ e2_names)
+    | Bop { left; right; op } ->
+        let left, left_names = extract_names_in_expr left in
+        let right, right_names = extract_names_in_expr right in
+        (Bop { left; right; op }, left_names @ right_names)
+    | Uop { arg; op } ->
+        let arg, names = extract_names_in_expr arg in
+        (Uop { arg; op }, names)
+    | Alloc -> (Alloc, [])
+    | Set { obj; value; field } ->
+        let obj, obj_names = extract_names_in_expr obj in
+        let value, value_names = extract_names_in_expr value in
+        (Set { obj; value; field }, obj_names @ value_names)
+    | Get { obj; field } ->
+        let obj, names = extract_names_in_expr obj in
+        (Get { obj; field }, names)
+    | SetIdx { obj; idx; value } ->
+        let obj, obj_names = extract_names_in_expr obj in
+        let idx, idx_names = extract_names_in_expr idx in
+        let value, value_names = extract_names_in_expr value in
+        (SetIdx { obj; idx; value }, obj_names @ idx_names @ value_names)
+    | GetIdx { obj; idx } ->
+        let obj, obj_names = extract_names_in_expr obj in
+        let idx, idx_names = extract_names_in_expr idx in
+        (GetIdx { obj; idx }, obj_names @ idx_names)
+
+let rec extract_names_in_prog =
+  let open Syntax.Prog in
+  function
+  | Expr e ->
+      let e, names = extract_names_in_expr e in
+      (Expr e, names)
+  | Comp ({ name; param; body }, e) ->
+      let body, body_names = extract_names_in_expr body in
+      let e, e_names = extract_names_in_prog e in
+      ( Comp ({ name = "_"; param = "_"; body }, e),
+        (name :: param :: body_names) @ e_names )
+
+let names_to_numbering names =
+  let map =
+    List.foldi names ~init:String.Map.empty ~f:(fun i acc name ->
+        Map.set acc ~key:name ~data:i)
+  in
+  List.map names ~f:(Map.find_exn map)
+
+let normalize_prog prog =
+  let prog, names = extract_names_in_prog prog in
+  let numbering = names_to_numbering names in
+  sexp_of_pair Syntax.Prog.sexp_of_t (sexp_of_list sexp_of_int) (prog, numbering)
+
 let parse_unit () =
   let open Syntax in
   let (Ex expr) = parse_expr "()" in
@@ -284,6 +377,56 @@ let parse_indexing () =
                          right = Const (Int 1);
                        } );
              }))
+
+let js_var () =
+  let open Syntax in
+  let js, _ = parse_js "x" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "x; ()" |> Prog.sexp_of_t)
+
+let js_literal () =
+  let open Syntax in
+  let js, _ = parse_js "42; true; null" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "42; true; (); ()" |> Prog.sexp_of_t)
+
+let js_jsx () =
+  let open Syntax in
+  let js, _ = parse_js "<Comp />" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "Comp (); ()" |> Prog.sexp_of_t)
+
+let js_op () =
+  let open Syntax in
+  let js, _ =
+    parse_js
+      "a || b; a && b; a === b; a !== b; a < b; a <= b; a > b; a >= b; a + b; \
+       a - b; a * b; void a; -a; +a; !a"
+  in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~expected:
+      (parse_prog
+         "if a then true else b; if a then b else false; a = b; a <> b; a < b; \
+          a <= b; a > b; a >= b; a + b; a - b; a * b; (a; ()); -a; +a; not a; \
+          ()"
+      |> Prog.sexp_of_t)
+
+let js_optcall () =
+  let js, _ = parse_js "a?.(b)" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
+    ~expected:
+      (parse_prog "(let a' = a in if a' = () then () else a'(b)); ()"
+      |> normalize_prog)
 
 let no_side_effect () =
   let prog =
@@ -609,6 +752,14 @@ let () =
           test_case "op" `Quick parse_op;
           test_case "obj" `Quick parse_obj;
           test_case "indexing" `Quick parse_indexing;
+        ] );
+      ( "convert",
+        [
+          test_case "var" `Quick js_var;
+          test_case "literal" `Quick js_literal;
+          test_case "jsx" `Quick js_jsx;
+          test_case "binop" `Quick js_op;
+          test_case "optcall" `Quick js_optcall;
         ] );
       ( "steps",
         [

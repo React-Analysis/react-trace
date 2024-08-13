@@ -77,11 +77,6 @@ let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   | In -> failwith "TODO"
   | Instanceof -> failwith "TODO"
 
-let convert_logical_op (op : Flow_ast.Expression.Logical.operator) :
-    Syntax.Expr.bop =
-  let open Syntax.Expr in
-  match op with Or -> Or | And -> And | NullishCoalesce -> failwith "TODO"
-
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.some_expr =
   let open Syntax.Expr in
@@ -234,6 +229,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   let open Syntax.Expr in
   match expr with
   | Array { elements; _ } ->
+      (* [e0, e1] -> (let arr = {} in arr[0] := e0; arr[1] := e1; arr) *)
       let arr = fresh () in
       let asgns =
         List.mapi elements ~f:(fun i element ->
@@ -296,10 +292,13 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | BigIntLiteral _ -> failwith "TODO"
   | RegExpLiteral _ -> failwith "TODO"
   | ModuleRefLiteral _ -> failwith "TODO"
-  | Logical { operator; left; right; _ } ->
+  | Logical { operator; left; right; _ } -> (
       let left = convert_expr left |> Syntax.Expr.hook_free |> get_exn in
       let right = convert_expr right |> Syntax.Expr.hook_free |> get_exn in
-      Ex (Bop { op = convert_logical_op operator; left; right })
+      match operator with
+      | Or -> Ex (Cond { pred = left; con = Const (Bool true); alt = right })
+      | And -> Ex (Cond { pred = left; con = right; alt = Const (Bool false) })
+      | NullishCoalesce -> failwith "TODO")
   | Member _ -> failwith "TODO"
   | MetaProperty _ -> failwith "TODO"
   | New _ -> failwith "TODO"
@@ -307,15 +306,22 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | OptionalCall { optional; call = { callee; arguments; _ }; _ } ->
       (* f?.(x) --> let _f = f in (if _f = () then () else (_f x)) *)
       let callee = convert_expr callee |> Syntax.Expr.hook_free |> get_exn in
+      let name = fresh () in
       if optional then
         Ex
-          (Cond
+          (Let
              {
-               pred = Bop { op = Eq; left = callee; right = Const Unit };
-               con = Const Unit;
-               alt =
-                 convert_call callee arguments
-                 |> Syntax.Expr.hook_free |> get_exn;
+               id = name;
+               bound = callee;
+               body =
+                 Cond
+                   {
+                     pred = Bop { op = Eq; left = Var name; right = Const Unit };
+                     con = Const Unit;
+                     alt =
+                       convert_call (Var name) arguments
+                       |> Syntax.Expr.hook_free |> get_exn;
+                   };
              })
       else convert_call callee arguments
   | OptionalMember _ -> failwith "TODO"
