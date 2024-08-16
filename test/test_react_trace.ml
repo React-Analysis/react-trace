@@ -437,6 +437,71 @@ let js_cond () =
     ~expected:
       (parse_prog "if a then (b; ()) else (c; ()); ()" |> Syntax.Prog.sexp_of_t)
 
+let js_pattern_id () =
+  let js, _ = parse_js "let p = q;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj"
+    ~actual:(Syntax.Prog.sexp_of_t prog)
+    ~expected:(parse_prog {|let p = q in ()|} |> Syntax.Prog.sexp_of_t)
+
+let js_pattern_object () =
+  let js, _ = parse_js "let {x, y} = q;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
+    ~expected:
+      (parse_prog {|
+let q' = q in
+  let x = q'.x in
+  let y = q'.y in
+()|}
+      |> normalize_prog)
+
+let js_pattern_array () =
+  let js, _ = parse_js "let [x, y, , z] = q;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
+    ~expected:
+      (parse_prog
+         {|
+let q' = q in
+  let x = q'[0] in
+  let y = q'[1] in
+  let z = q'[3] in
+()|}
+      |> normalize_prog)
+
+let js_pattern_nested () =
+  let js, _ = parse_js "let {x: {y: [a, b]}} = q;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
+    ~expected:
+      (parse_prog
+         {|
+let q' = q in
+let x = q'.x in
+let y = x.y in
+let a = y[0] in
+let b = y[1] in
+()|}
+      |> normalize_prog)
+
+let js_object () =
+  (* Without parentheses, the object is parsed as a block with two labeled
+     statements *)
+  let js, _ = parse_js "let p = {y: 1, z: 2, 3: 4}; p.y; p[1+2]" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
+    ~expected:
+      (parse_prog
+         {|
+let p = (let obj = {} in obj.y := 1; obj.z := 2; obj[3] := 4; obj) in p.y; p[1+2]; ()|}
+      |> normalize_prog)
+
 let no_side_effect () =
   let prog =
     parse_prog {|
@@ -770,6 +835,11 @@ let () =
           test_case "binop" `Quick js_op;
           test_case "optcall" `Quick js_optcall;
           test_case "cond" `Quick js_cond;
+          test_case "id pattern" `Quick js_pattern_id;
+          test_case "object pattern" `Quick js_pattern_object;
+          test_case "array pattern" `Quick js_pattern_array;
+          test_case "nested pattern" `Quick js_pattern_nested;
+          test_case "object" `Quick js_object;
         ] );
       ( "steps",
         [

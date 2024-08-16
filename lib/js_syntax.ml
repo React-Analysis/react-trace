@@ -40,16 +40,41 @@ let get_exn ?(msg = "option is None") : 'a option -> 'a = function
 *)
 [@@ocamlformat "wrap-comments=false"]
 
-let convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
-    ~(base_name : string) : (string * Syntax.Expr.hook_free_t) list =
+let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
+    ~(base_expr : Syntax.Expr.hook_free_t) :
+    (string * Syntax.Expr.hook_free_t) list =
   let open Syntax.Expr in
   match pattern with
-  | Identifier { name = _, { name; _ }; _ } -> [ (name, Var base_name) ]
-  (* | Object { properties; _ } -> List.concat_map properties ~f:(fun prop ->
-     match prop with | Flow_ast.Pattern.Object.Property ( _, { key =
-     Flow_ast.Pattern.Object.Property.Identifier (_, { name; _ }); pattern; _; }
-     ) -> [ (fresh (), (Var base_name, name)) ] | _ -> failwith "TODO") *)
-  | _ -> failwith "TODO"
+  | Identifier { name = _, { name; _ }; _ } -> [ (name, base_expr) ]
+  | Object { properties; _ } ->
+      let base_name = fresh () in
+      (base_name, base_expr)
+      :: List.concat_map properties ~f:(function
+           | Property (_, { key; pattern; default = None; _ }) ->
+               let key =
+                 match key with
+                 | StringLiteral (_, { value; _ }) -> value
+                 | NumberLiteral (_, { value; _ }) -> Float.to_string value
+                 | BigIntLiteral _ -> failwith "TODO"
+                 | Identifier (_, { name; _ }) -> name
+                 | Computed _ -> failwith "TODO"
+               in
+               convert_pattern pattern
+                 ~base_expr:(Get { obj = Var base_name; field = key })
+           | Property (_, { default = Some _; _ }) -> failwith "TODO"
+           | RestElement _ -> failwith "TODO")
+  | Array { elements; _ } ->
+      let base_name = fresh () in
+      (base_name, base_expr)
+      :: List.concat_mapi elements ~f:(fun i -> function
+           | Element (_, { argument; default = None }) ->
+               convert_pattern argument
+                 ~base_expr:
+                   (GetIdx { obj = Var base_name; idx = Const (Int i) })
+           | Element (_, { default = Some _; _ }) -> failwith "TODO"
+           | RestElement _ -> failwith "TODO"
+           | Hole _ -> [])
+  | Expression _ -> failwith "Unreachable"
 
 let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   let open Syntax.Expr in
@@ -78,13 +103,13 @@ let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   | Instanceof -> failwith "TODO"
 
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
-    Syntax.Expr.some_expr =
+    Syntax.Expr.hook_free_t =
   let open Syntax.Expr in
   let rec convert_stat tail ((_, stmt) : (Loc.t, Loc.t) Flow_ast.Statement.t) =
     match stmt with
     | Block { body; _ } ->
         let body = convert_stat_list body in
-        some_seq body tail
+        Seq (body, tail)
     | Break _ -> failwith "TODO"
     | ClassDeclaration _ -> failwith "TODO"
     | ComponentDeclaration _ -> failwith "TODO"
@@ -105,7 +130,7 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
         | Declaration stmt ->
             (* delegate to var and function declaration *)
             convert_stat tail stmt
-        | Expression expr -> some_seq (convert_expr expr) tail)
+        | Expression expr -> Seq (convert_expr expr, tail))
     | ExportNamedDeclaration { declaration; _ } -> (
         (* TODO: handle export named declaration, especially those without
            declaration *)
@@ -116,32 +141,24 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
         | None -> tail)
     | Expression { expression; _ } ->
         let expr = convert_expr expression in
-        some_seq expr tail
+        Seq (expr, tail)
     | For _ -> failwith "TODO"
     | ForIn _ -> failwith "TODO"
     | ForOf _ -> failwith "TODO"
     | FunctionDeclaration f -> (
         let expr = convert_func f in
         match f.id with
-        | Some (_, { name; _ }) ->
-            let expr = expr |> hook_free |> get_exn in
-            let (Ex tail) = tail in
-            Ex (Let { id = name; bound = expr; body = tail })
-        | None -> some_seq expr tail)
+        | Some (_, { name; _ }) -> Let { id = name; bound = expr; body = tail }
+        | None -> Seq (expr, tail))
     | If { test; consequent; alternate; _ } ->
-        let test = convert_expr test |> hook_free |> get_exn in
-        let consequent =
-          convert_stat_list [ consequent ] |> hook_free |> get_exn
-        in
+        let test = convert_expr test in
+        let consequent = convert_stat (Const Unit) consequent in
         let alternate =
           match alternate with
-          | Some (_, { body; _ }) ->
-              convert_stat_list [ body ] |> hook_free |> get_exn
+          | Some (_, { body; _ }) -> convert_stat (Const Unit) body
           | None -> Const Unit
         in
-        some_seq
-          (Ex (Cond { pred = test; con = consequent; alt = alternate }))
-          tail
+        Seq (Cond { pred = test; con = consequent; alt = alternate }, tail)
     | ImportDeclaration _ -> failwith "TODO"
     | InterfaceDeclaration _ -> failwith "TODO"
     | Labeled _ ->
@@ -159,27 +176,23 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
           List.concat_map declarations ~f:(fun (_, { id; init; _ }) ->
               let init =
                 match init with
-                | Some expr -> convert_expr expr |> hook_free |> get_exn
+                | Some expr -> convert_expr expr
                 | None -> Const Unit
               in
-              match id with
-              | _, Identifier { name = _, { name; _ }; _ } -> [ (name, init) ]
-              | _ ->
-                  let base_name = fresh () in
-                  let base_binding = (base_name, init) in
-                  let pattern_bindings = convert_pattern id ~base_name in
-                  base_binding :: pattern_bindings)
+              convert_pattern id ~base_expr:init)
         in
-        List.fold decls ~init:tail ~f:(fun (Ex tail) (name, expr) ->
-            Ex (Let { id = name; bound = expr; body = tail }))
+        decls |> List.rev
+        |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
+               Let { id = name; bound = expr; body = tail })
     | While _ -> failwith "TODO"
     | With _ -> failwith "TODO"
   in
-  List.rev body |> List.fold ~init:(Ex (Const Unit)) ~f:convert_stat
+  List.rev body |> List.fold ~init:(Const Unit) ~f:convert_stat
 
 and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
-    Syntax.Expr.some_expr =
+    Syntax.Expr.hook_free_t =
   (* TODO: handle recursive binding *)
+  let open Syntax.Expr in
   let param =
     match params with
     | _, { params = [ (_, { argument; default = None }) ]; _ } -> argument
@@ -190,7 +203,9 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
     | _, Identifier { name = _, { name; _ }; _ } -> (name, [])
     | _ ->
         let param_name = fresh () in
-        let param_bindings = convert_pattern param ~base_name:param_name in
+        let param_bindings =
+          convert_pattern param ~base_expr:(Var param_name)
+        in
         (param_name, param_bindings)
   in
   let body =
@@ -201,31 +216,31 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
   let body =
     List.rev param_bindings
     |> List.fold ~init:body ~f:(fun last_expr (name, expr) ->
-           Ex
-             (Let
-                {
-                  id = name;
-                  bound = expr;
-                  body = last_expr |> Syntax.Expr.hook_full;
-                }))
-    |> Syntax.Expr.hook_free
-    |> get_exn ~msg:"cannot convert function body to hook-free expression"
+           Let { id = name; bound = expr; body = last_expr })
   in
-  Ex (Fn { param = param_name; body })
+  Fn { param = param_name; body }
 
 and convert_call (callee : Syntax.Expr.hook_free_t)
     ((_, { arguments; _ }) : (Loc.t, Loc.t) Flow_ast.Expression.ArgList.t) :
-    Syntax.Expr.some_expr =
+    Syntax.Expr.hook_free_t =
   let argument =
     match arguments with
-    | [ Expression expr ] ->
-        convert_expr expr |> Syntax.Expr.hook_free |> get_exn
+    | [ Expression expr ] -> convert_expr expr
     | _ -> failwith "TODO: non-single or spread arguments"
   in
-  Ex (App { fn = callee; arg = argument })
+  App { fn = callee; arg = argument }
+
+and convert_member (obj : Syntax.Expr.hook_free_t)
+    (property : (Loc.t, Loc.t) Flow_ast.Expression.Member.property) :
+    Syntax.Expr.hook_free_t =
+  let open Syntax.Expr in
+  match property with
+  | PropertyIdentifier (_, { name; _ }) -> Get { obj; field = name }
+  | PropertyPrivateName _ -> failwith "TODO"
+  | PropertyExpression expr -> GetIdx { obj; idx = convert_expr expr }
 
 and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
-    Syntax.Expr.some_expr =
+    Syntax.Expr.hook_free_t =
   let open Syntax.Expr in
   match expr with
   | Array { elements; _ } ->
@@ -235,9 +250,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
         List.mapi elements ~f:(fun i element ->
             match element with
             | Expression expr ->
-                let elem =
-                  convert_expr expr |> Syntax.Expr.hook_free |> get_exn
-                in
+                let elem = convert_expr expr in
                 SetIdx { obj = Var arr; idx = Const (Int i); value = elem }
             | _ -> failwith "TODO")
       in
@@ -246,29 +259,25 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
         |> List.fold ~init:(Var arr) ~f:(fun last_expr asgn ->
                Seq (asgn, last_expr))
       in
-      Ex (Let { id = arr; bound = Alloc; body = asgns })
+      Let { id = arr; bound = Alloc; body = asgns }
   | Function f | ArrowFunction f -> convert_func f
   | AsConstExpression { expression; _ } -> convert_expr expression
   | AsExpression { expression; _ } -> convert_expr expression
   | Assignment _ -> failwith "TODO"
   | Binary { operator; left; right; _ } ->
-      let left = convert_expr left |> Syntax.Expr.hook_free |> get_exn in
-      let right = convert_expr right |> Syntax.Expr.hook_free |> get_exn in
-      Ex (Bop { op = convert_bop operator; left; right })
+      let left = convert_expr left in
+      let right = convert_expr right in
+      Bop { op = convert_bop operator; left; right }
   | Call { callee; arguments; _ } ->
-      let callee = convert_expr callee |> Syntax.Expr.hook_free |> get_exn in
+      let callee = convert_expr callee in
       convert_call callee arguments
   | Class _ -> failwith "TODO"
   | Conditional { test; consequent; alternate; _ } ->
-      let test = convert_expr test |> Syntax.Expr.hook_free |> get_exn in
-      let consequent =
-        convert_expr consequent |> Syntax.Expr.hook_free |> get_exn
-      in
-      let alternate =
-        convert_expr alternate |> Syntax.Expr.hook_free |> get_exn
-      in
-      Ex (Cond { pred = test; con = consequent; alt = alternate })
-  | Identifier (_, { name; _ }) -> Ex (Var name)
+      let test = convert_expr test in
+      let consequent = convert_expr consequent in
+      let alternate = convert_expr alternate in
+      Cond { pred = test; con = consequent; alt = alternate }
+  | Identifier (_, { name; _ }) -> Var name
   | Import _ -> failwith "TODO"
   | JSXElement { opening_element = _, { name; _ }; _ } ->
       (* TODO: handle opening and attributes and children *)
@@ -277,57 +286,109 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
         | Identifier (_, { name; _ }) -> name
         | _ -> failwith "TODO: non-identifier JSX element name"
       in
-      Ex (App { fn = Var name; arg = Const Unit })
+      App { fn = Var name; arg = Const Unit }
   | JSXFragment _ ->
       (* TODO *)
-      Ex (Const Unit)
+      Const Unit
   | StringLiteral _ -> failwith "TODO"
-  | BooleanLiteral { value; _ } -> Ex (Const (Bool value))
+  | BooleanLiteral { value; _ } -> Const (Bool value)
   | NullLiteral _ ->
       (* TODO: discriminate null and undefined *)
-      Ex (Const Unit)
+      Const Unit
   | NumberLiteral { value; _ } ->
       (* TODO: handle non-int value *)
-      Ex (Const (Int (Int.of_float value)))
+      Const (Int (Int.of_float value))
   | BigIntLiteral _ -> failwith "TODO"
   | RegExpLiteral _ -> failwith "TODO"
-  | ModuleRefLiteral _ -> failwith "TODO"
+  | ModuleRefLiteral _ -> failwith "Not Supported"
   | Logical { operator; left; right; _ } -> (
-      let left = convert_expr left |> Syntax.Expr.hook_free |> get_exn in
-      let right = convert_expr right |> Syntax.Expr.hook_free |> get_exn in
+      let left = convert_expr left in
+      let right = convert_expr right in
       match operator with
-      | Or -> Ex (Cond { pred = left; con = Const (Bool true); alt = right })
-      | And -> Ex (Cond { pred = left; con = right; alt = Const (Bool false) })
+      | Or -> Cond { pred = left; con = Const (Bool true); alt = right }
+      | And -> Cond { pred = left; con = right; alt = Const (Bool false) }
       | NullishCoalesce -> failwith "TODO")
-  | Member _ -> failwith "TODO"
+  | Member { _object; property; _ } ->
+      let obj = convert_expr _object in
+      convert_member obj property
   | MetaProperty _ -> failwith "TODO"
   | New _ -> failwith "TODO"
-  | Object _ -> failwith "TODO"
+  | Object { properties; _ } ->
+      (* { a: x, b: y } --> (let obj = {} in obj.a := x; obj.b := y; obj) *)
+      let obj = fresh () in
+      let convert_key_to_set prop_value = function
+        | Flow_ast.Expression.Object.Property.StringLiteral (_, { value; _ }) ->
+            Set { obj = Var obj; field = value; value = prop_value }
+        | NumberLiteral (_, { value; _ }) ->
+            SetIdx
+              {
+                obj = Var obj;
+                idx = Const (Int (Float.to_int value));
+                value = prop_value;
+              }
+        | BigIntLiteral _ -> failwith "TODO"
+        | Identifier (_, { name; _ }) ->
+            Set { obj = Var obj; field = name; value = prop_value }
+        | PrivateName _ -> failwith "TODO"
+        | Computed _ -> failwith "TODO"
+      in
+      let asgns =
+        List.map properties ~f:(function
+          | Property (_, Init { key; value; _ }) ->
+              let value = convert_expr value in
+              convert_key_to_set value key
+          | Property (_, Method { key; value = _, value; _ }) ->
+              let value = convert_func value in
+              convert_key_to_set value key
+          | Property (_, Get _) -> failwith "TODO"
+          | Property (_, Set _) -> failwith "TODO"
+          | SpreadProperty _ -> failwith "TODO")
+      in
+      let body =
+        asgns |> List.rev
+        |> List.fold ~init:(Var obj) ~f:(fun last_expr asgn ->
+               Seq (asgn, last_expr))
+      in
+      Let { id = obj; bound = Alloc; body }
   | OptionalCall { optional; call = { callee; arguments; _ }; _ } ->
       (* f?.(x) --> let f' = f in (if f' = () then () else (f' x)) *)
-      let callee = convert_expr callee |> Syntax.Expr.hook_free |> get_exn in
+      let callee = convert_expr callee in
       let name = fresh () in
       if optional then
-        Ex
-          (Let
-             {
-               id = name;
-               bound = callee;
-               body =
-                 Cond
-                   {
-                     pred = Bop { op = Eq; left = Var name; right = Const Unit };
-                     con = Const Unit;
-                     alt =
-                       convert_call (Var name) arguments
-                       |> Syntax.Expr.hook_free |> get_exn;
-                   };
-             })
+        Let
+          {
+            id = name;
+            bound = callee;
+            body =
+              Cond
+                {
+                  pred = Bop { op = Eq; left = Var name; right = Const Unit };
+                  con = Const Unit;
+                  alt = convert_call (Var name) arguments;
+                };
+          }
       else convert_call callee arguments
-  | OptionalMember _ -> failwith "TODO"
+  | OptionalMember { optional; member; _ } ->
+      (* obj?.x --> let obj' = obj in (if obj' = () then () else obj'.x) *)
+      let obj = convert_expr member._object in
+      if optional then
+        let name = fresh () in
+        Let
+          {
+            id = name;
+            bound = obj;
+            body =
+              Cond
+                {
+                  pred = Bop { op = Eq; left = Var name; right = Const Unit };
+                  con = Const Unit;
+                  alt = convert_member (Var name) member.property;
+                };
+          }
+      else convert_member obj member.property
   | Sequence { expressions; _ } ->
-      List.fold expressions ~init:(Syntax.Expr.Ex (Const Unit))
-        ~f:(fun left right -> some_seq left (convert_expr right))
+      List.fold expressions ~init:(Const Unit) ~f:(fun left right ->
+          Seq (left, convert_expr right))
   | Super _ -> failwith "TODO"
   | TaggedTemplate _ -> failwith "TODO"
   | TemplateLiteral _ -> failwith "TODO"
@@ -335,25 +396,19 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | TypeCast { expression; _ } -> convert_expr expression
   | TSSatisfies { expression; _ } -> convert_expr expression
   | Unary { operator; argument; _ } -> (
-      let argument =
-        convert_expr argument |> Syntax.Expr.hook_free |> get_exn
-      in
+      let argument = convert_expr argument in
       let open Syntax.Expr in
       match operator with
-      | Minus -> Ex (Uop { op = Uminus; arg = argument })
-      | Plus -> Ex (Uop { op = Uplus; arg = argument })
-      | Not -> Ex (Uop { op = Not; arg = argument })
+      | Minus -> Uop { op = Uminus; arg = argument }
+      | Plus -> Uop { op = Uplus; arg = argument }
+      | Not -> Uop { op = Not; arg = argument }
       | BitNot -> failwith "TODO"
       | Typeof -> failwith "TODO"
-      | Void -> Ex (Seq (argument, Const Unit))
+      | Void -> Seq (argument, Const Unit)
       | Delete -> failwith "TODO"
       | Await -> failwith "TODO")
   | Update _ -> failwith "TODO"
   | Yield _ -> failwith "TODO"
-
-let convert_component_decl (_ast : (Loc.t, Loc.t) Flow_ast.Function.t) :
-    Syntax.Prog.comp =
-  failwith "TODO"
 
 let convert (js_ast : js_ast) : Syntax.Prog.t =
   let _, { Flow_ast.Program.statements; _ } = js_ast in
@@ -386,11 +441,7 @@ let convert (js_ast : js_ast) : Syntax.Prog.t =
            Syntax.Expr.hook_full } *)
         | _ -> Second stmt)
   in
-  let last_expr =
-    match stats |> convert_stat_list |> Syntax.Expr.hook_free with
-    | Some e -> e
-    | None -> failwith "cannot parse top-level expression as hook-free"
-  in
+  let last_expr = stats |> convert_stat_list in
   List.rev comps
   |> List.fold ~init:(Syntax.Prog.Expr last_expr) ~f:(fun last_expr comp ->
          Syntax.Prog.Comp (comp, last_expr))
