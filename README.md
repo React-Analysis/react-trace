@@ -1,4 +1,11 @@
-# React-tRace
+# 🛤️ React-tRace
+
+[![Builds, tests & co](https://github.com/React-Analysis/react-trace/actions/workflows/ci.yml/badge.svg)](https://github.com/React-Analysis/react-trace/actions/workflows/ci.yml)
+
+React-tRace is a React hooks reference interpreter based on a formal semantics[^1].
+It focuses on detecting inefficient re-renders.
+
+[^1]: The Coq formalization is currently being developed [here](https://github.com/React-Analysis/formal-react-trace)
 
 ## Developing
 
