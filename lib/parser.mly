@@ -63,7 +63,7 @@ expr_:
       { let Ex body = body in
         Ex (Let { id; bound = hook_free_exn bound; body })
       }
-    | STT; stt = var; COMMA; set = var; EQ; init = expr_; IN; body = expr_
+    | LET; LPAREN; stt = var; COMMA; set = var; RPAREN; EQ; STT; init = expr_; IN; body = expr_
       { Ex (Stt { label = -1; stt; set; init = hook_free_exn init; body = hook_full body }) }
     | EFF; e = expr_ { Ex (Eff (hook_free_exn e)) }
     | VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr_); RBRACK { Ex (View (List.map hook_free_exn vss)) }

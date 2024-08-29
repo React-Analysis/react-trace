@@ -1,6 +1,6 @@
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 0));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 0));
   view [()]
 ;;
 view [C ()]

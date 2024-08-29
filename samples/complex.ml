@@ -1,14 +1,12 @@
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 0));
+  let (s, setS) = useState x in
+  if s = 42 then
+    setS (fun s -> s + 1);
   view [()]
 ;;
-let D x =
-  stt s, setS = true in
-  eff (setS (fun s -> false));
-  if s then
-    view [C ()]
-  else
-    view [C (), C ()]
+let D _ =
+  let (s, setS) = useState true in
+  useEffect (setS (fun _ -> false));
+  view [C 42]
 ;;
-view [D ()]
+view [D (), 0]

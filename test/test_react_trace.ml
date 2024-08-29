@@ -237,7 +237,10 @@ let parse_let () =
 
 let parse_stt () =
   let open Syntax in
-  let (Ex expr) = parse_expr "stt x, setX = 42 in stt y, setY = -42 in x + y" in
+  let (Ex expr) =
+    parse_expr
+      "let (x, setX) = useState 42 in let (y, setY) = useState -42 in x + y"
+  in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse stt" ~actual:(Expr.sexp_of_t expr)
     ~expected:
@@ -262,7 +265,7 @@ let parse_stt () =
 
 let parse_eff () =
   let open Syntax in
-  let (Ex expr) = parse_expr "eff (x ())" in
+  let (Ex expr) = parse_expr "useEffect (x ())" in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse eff" ~actual:(Expr.sexp_of_t expr)
     ~expected:Expr.(sexp_of_t (Eff (App { fn = Var "x"; arg = Const Unit })))
@@ -507,9 +510,10 @@ let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y
 
 let no_side_effect () =
   let prog =
-    parse_prog {|
+    parse_prog
+      {|
 let C x =
-  stt s, setS = 42 in
+  let (s, setS) = useState 42 in
   view [()]
 ;;
 view [C ()]
@@ -523,7 +527,7 @@ let set_in_body_nonterminate () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
+  let (s, setS) = useState 42 in
   setS (fun s -> 43);
   view [()]
 ;;
@@ -541,7 +545,7 @@ let set_in_body_guarded () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
+  let (s, setS) = useState 42 in
   if s = 42 then setS (fun s -> 43);
   view [()]
 ;;
@@ -556,8 +560,8 @@ let set_in_effect_step_one_time () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 42));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 42));
   view [()]
 ;;
 view [C ()]
@@ -571,8 +575,8 @@ let set_in_effect_step_two_times () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 43));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 43));
   view [()]
 ;;
 view [C ()]
@@ -586,8 +590,8 @@ let set_in_effect_step_indefinitely () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> s + 1));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> s + 1));
   view [()]
 ;;
 view [C ()]
@@ -601,8 +605,8 @@ let set_in_effect_guarded_step_two_times () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (if s = 42 then setS (fun s -> 43));
+  let (s, setS) = useState 42 in
+  useEffect (if s = 42 then setS (fun s -> 43));
   view [()]
 ;;
 view [C ()]
@@ -616,8 +620,8 @@ let set_in_effect_guarded_step_n_times () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (if s <= 45 then setS (fun s -> s + 1));
+  let (s, setS) = useState 42 in
+  useEffect (if s <= 45 then setS (fun s -> s + 1));
   view [()]
 ;;
 view [C ()]
@@ -631,8 +635,8 @@ let set_in_effect_with_arg_step_one_time () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (if s <> x then setS (fun s -> x));
+  let (s, setS) = useState 42 in
+  useEffect (if s <> x then setS (fun s -> x));
   view [()]
 ;;
 view [C 42]
@@ -646,8 +650,8 @@ let set_in_effect_with_arg_step_two_times () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (if s <> x then setS (fun s -> x));
+  let (s, setS) = useState 42 in
+  useEffect (if s <> x then setS (fun s -> x));
   view [()]
 ;;
 view [C 0]
@@ -661,11 +665,11 @@ let set_passed_step_two_times () =
     parse_prog
       {|
 let C setS =
-  eff (setS (fun s -> 0));
+  useEffect (setS (fun s -> 0));
   view [()]
 ;;
 let D x =
-  stt s, setS = 42 in
+  let (s, setS) = useState 42 in
   view [C setS]
 ;;
 view [D ()]
@@ -679,11 +683,11 @@ let set_passed_step_indefinitely () =
     parse_prog
       {|
 let C setS =
-  eff (setS (fun s -> s + 1));
+  useEffect (setS (fun s -> s + 1));
   view [()]
 ;;
 let D x =
-  stt s, setS = 42 in
+  let (s, setS) = useState 42 in
   view [C setS]
 ;;
 view [D ()]
@@ -697,8 +701,8 @@ let set_in_effect_twice_step_one_time () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 43); setS (fun s -> 42));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 43); setS (fun s -> 42));
   view [()]
 ;;
 view [C ()]
@@ -712,13 +716,13 @@ let set_in_removed_child_step_two_times () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> s + 1));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> s + 1));
   view [()]
 ;;
 let D x =
-  stt s, setS = true in
-  eff (setS (fun s -> false));
+  let (s, setS) = useState true in
+  useEffect (setS (fun s -> false));
   if s then
     view [C ()]
   else
@@ -735,13 +739,13 @@ let state_persists_in_child () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 0));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 0));
   view [()]
 ;;
 let D x =
-  stt s, setS = true in
-  eff (setS (fun s -> false));
+  let (s, setS) = useState true in
+  useEffect (setS (fun s -> false));
   if s then
     view [C ()]
   else
@@ -758,13 +762,13 @@ let new_child_steps_again () =
     parse_prog
       {|
 let C x =
-  stt s, setS = 42 in
-  eff (setS (fun s -> 0));
+  let (s, setS) = useState 42 in
+  useEffect (setS (fun s -> 0));
   view [()]
 ;;
 let D x =
-  stt s, setS = true in
-  eff (setS (fun s -> false));
+  let (s, setS) = useState true in
+  useEffect (setS (fun s -> false));
   if s then
     view [C ()]
   else
@@ -781,8 +785,8 @@ let set_in_effect_guarded_step_n_times_with_obj () =
     parse_prog
       {|
 let C x =
-  stt s, setS = (let r = {} in r["x"] := 42; r) in
-  eff (if s["x"] <= 45 then setS (fun s -> (let r = {} in r["x"] := s["x"] + 1; r)));
+  let (s, setS) = useState (let r = {} in r["x"] := 42; r) in
+  useEffect (if s["x"] <= 45 then setS (fun s -> (let r = {} in r["x"] := s["x"] + 1; r)));
   view [()]
 ;;
 view [C ()]
@@ -796,8 +800,8 @@ let updating_obj_without_set_does_not_rerender () =
     parse_prog
       {|
 let C x =
-  stt s, setS = (let r = {} in r["x"] := 42; r) in
-  eff (s["x"] := 43);
+  let (s, setS) = useState (let r = {} in r["x"] := 42; r) in
+  useEffect (s["x"] := 43);
   view [()]
 ;;
 view [C ()]

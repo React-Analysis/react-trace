@@ -18,9 +18,9 @@ let keywords =
       ("then", THEN);
       ("else", ELSE);
       ("let", LET);
-      ("stt", STT);
+      ("useState", STT);
       ("in", IN);
-      ("eff", EFF);
+      ("useEffect", EFF);
     ];
   tbl
 
