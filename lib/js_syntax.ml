@@ -54,14 +54,14 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
                let key =
                  match key with
                  | StringLiteral (_, { value; _ }) -> Const (String value)
-                 | NumberLiteral (_, { value; _ }) -> Const (Int (Int.of_float value))
+                 | NumberLiteral (_, { value; _ }) ->
+                     Const (Int (Int.of_float value))
                  | BigIntLiteral _ -> failwith "TODO"
                  | Identifier (_, { name; _ }) -> Const (String name)
                  | Computed _ -> failwith "TODO"
                in
                convert_pattern pattern
-                 ~base_expr:
-                   (Get { obj = Var base_name; idx = key })
+                 ~base_expr:(Get { obj = Var base_name; idx = key })
            | Property (_, { default = Some _; _ }) -> failwith "TODO"
            | RestElement _ -> failwith "TODO")
   | Array { elements; _ } ->
@@ -70,12 +70,7 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
       :: List.concat_mapi elements ~f:(fun i -> function
            | Element (_, { argument; default = None }) ->
                convert_pattern argument
-                 ~base_expr:
-                   (Get
-                      {
-                        obj = Var base_name;
-                        idx = Const (Int i);
-                      })
+                 ~base_expr:(Get { obj = Var base_name; idx = Const (Int i) })
            | Element (_, { default = Some _; _ }) -> failwith "TODO"
            | RestElement _ -> failwith "TODO"
            | Hole _ -> [])
@@ -311,9 +306,39 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
       let left = convert_expr left in
       let right = convert_expr right in
       match operator with
-      | Or -> Cond { pred = left; con = Const (Bool true); alt = right }
-      | And -> Cond { pred = left; con = right; alt = Const (Bool false) }
-      | NullishCoalesce -> failwith "TODO")
+      | Or ->
+          (* a || b --> let a' = a in (if a' then a' else b) *)
+          let name = fresh () in
+          Let
+            {
+              id = name;
+              bound = left;
+              body = Cond { pred = Var name; con = Var name; alt = right };
+            }
+      | And ->
+          (* a && b --> let a' = a in (if a' then b else a') *)
+          let name = fresh () in
+          Let
+            {
+              id = name;
+              bound = left;
+              body = Cond { pred = Var name; con = right; alt = Var name };
+            }
+      | NullishCoalesce ->
+          (* a ?? b --> let a' = a in (if a' = () then b else a') *)
+          let name = fresh () in
+          Let
+            {
+              id = name;
+              bound = left;
+              body =
+                Cond
+                  {
+                    pred = Bop { op = Eq; left = Var name; right = Const Unit };
+                    con = right;
+                    alt = Var name;
+                  };
+            })
   | Member { _object; property; _ } ->
       let obj = convert_expr _object in
       convert_member obj property

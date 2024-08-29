@@ -409,21 +409,24 @@ let js_jsx () =
     ~expected:(parse_prog "view [()]; view [Comp ()]; ()" |> Prog.sexp_of_t)
 
 let js_op () =
-  let open Syntax in
   let js, _ =
     parse_js
-      "a || b; a && b; a === b; a !== b; a < b; a <= b; a > b; a >= b; a + b; \
+      "a || b; a && b; a ?? b; \
+       a === b; a !== b; a < b; a <= b; a > b; a >= b; a + b; \
        a - b; a * b; void a; -a; +a; !a"
   in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"parse obj" ~actual:(normalize_prog prog)
     ~expected:
       (parse_prog
-         "if a then true else b; if a then b else false; a = b; a <> b; a < b; \
+         "(let a' = a in if a' then a' else b); \
+          (let a'' = a in if a'' then b else a''); \
+          (let a''' = a in if a''' = () then b else a'''); \
+          a = b; a <> b; a < b; \
           a <= b; a > b; a >= b; a + b; a - b; a * b; (a; ()); -a; +a; not a; \
           ()"
-      |> Prog.sexp_of_t)
+      |> normalize_prog)
 
 let js_optcall () =
   let js, _ = parse_js "a?.(b)" in
