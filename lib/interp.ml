@@ -192,6 +192,7 @@ let value_exn exn v =
 
 let int_of_value_exn v = v |> Value.to_int |> value_exn Type_error
 let bool_of_value_exn v = v |> Value.to_bool |> value_exn Type_error
+let string_of_value_exn v = v |> Value.to_string |> value_exn Type_error
 let loc_of_value_exn v = v |> Value.to_loc |> value_exn Type_error
 let vs_of_value_exn v = v |> Value.to_vs |> value_exn Type_error
 let vss_of_value_exn v = v |> Value.to_vss |> value_exn Type_error
@@ -210,6 +211,7 @@ let rec eval : type a. a Expr.t -> value =
   | Const Unit -> Unit
   | Const (Bool b) -> Bool b
   | Const (Int i) -> Int i
+  | Const (String s) -> String s
   | Var id ->
       let env = perform Rd_env in
       Env.lookup_exn env ~id
@@ -318,27 +320,17 @@ let rec eval : type a. a Expr.t -> value =
   | Alloc ->
       let loc = perform (Alloc_loc Obj.empty) in
       Loc loc
-  | Get { obj; field } ->
-      let l = eval obj |> loc_of_value_exn in
-      perform (Lookup_loc l) |> Obj.lookup ~field
-  | Set { obj; field; value } ->
+  | Get { obj; idx } ->
       let loc = eval obj |> loc_of_value_exn in
-      let v = eval value in
-      let old_obj = perform (Lookup_loc loc) in
-      let new_obj = Obj.update old_obj ~field ~value:v in
-      perform (Update_loc (loc, new_obj));
-      Unit
-  | GetIdx { obj; idx } ->
-      let loc = eval obj |> loc_of_value_exn in
-      let i = eval idx |> int_of_value_exn in
+      let i = eval idx |> string_of_value_exn in
       let obj = perform (Lookup_loc loc) in
-      Obj.lookup obj ~field:(Int.to_string i)
-  | SetIdx { obj; idx; value } ->
+      Obj.lookup obj ~field:i
+  | Set { obj; idx; value } ->
       let loc = eval obj |> loc_of_value_exn in
-      let i = eval idx |> int_of_value_exn in
+      let i = eval idx |> string_of_value_exn in
       let old_obj = perform (Lookup_loc loc) in
       let value = eval value in
-      let new_obj = Obj.update old_obj ~field:(Int.to_string i) ~value in
+      let new_obj = Obj.update old_obj ~field:i ~value in
       perform (Update_loc (loc, new_obj));
       Unit
 

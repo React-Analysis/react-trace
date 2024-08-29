@@ -17,6 +17,7 @@ and label_stts_expr label = function
 %token UNIT TRUE FALSE
 %token <int> INT
 %token <string> ID
+%token <string> STRING
 %token RECORD DOT ASSIGN
 %token VIEW
 %token FUN LET STT IN EFF
@@ -79,12 +80,9 @@ expr_:
     | left = expr_; op = bop; right = expr_
       { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
     | RECORD { Ex (Alloc) }
-    | obj = expr_; DOT; field = var { Ex (Get { obj = hook_free_exn obj; field }) }
-    | obj = expr_; DOT; field = var; ASSIGN; value = expr_
-      { Ex (Set { obj = hook_free_exn obj; field; value = hook_free_exn value }) }
-    | obj = expr_; LBRACK; index = expr_; RBRACK { Ex (GetIdx { obj = hook_free_exn obj; idx = hook_free_exn index }) }
+    | obj = expr_; LBRACK; index = expr_; RBRACK { Ex (Get { obj = hook_free_exn obj; idx = hook_free_exn index }) }
     | obj = expr_; LBRACK; index = expr_; RBRACK; ASSIGN; value = expr_
-      { Ex (SetIdx { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value }) }
+      { Ex (Set { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value }) }
 %inline uop:
     | NOT { Not }
     | PLUS { Uplus }
@@ -109,6 +107,7 @@ atom:
     | TRUE { Ex (Const (Bool true)) }
     | FALSE { Ex (Const (Bool false)) }
     | n = INT { Ex (Const (Int n)) }
+    | s = STRING { Ex (Const (String s)) }
     | var = var { Ex (Var var) }
     | LPAREN; e = expr_; RPAREN { e }
 var:

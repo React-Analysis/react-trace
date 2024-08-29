@@ -17,6 +17,7 @@ module type T = sig
     | Unit
     | Bool of bool
     | Int of int
+    | String of string
     | Loc of loc
     | View_spec of view_spec list
     | Clos of clos
@@ -153,6 +154,7 @@ module type Value = sig
 
   val to_bool : t -> bool option
   val to_int : t -> int option
+  val to_string : t -> string option
   val to_loc : t -> loc option
   val to_vs : t -> view_spec option
   val to_vss : t -> view_spec list option

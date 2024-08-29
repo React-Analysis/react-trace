@@ -64,22 +64,15 @@ let rec extract_names_in_expr :
         let arg, names = extract_names_in_expr arg in
         (Uop { arg; op }, names)
     | Alloc -> (Alloc, [])
-    | Set { obj; value; field } ->
-        let obj, obj_names = extract_names_in_expr obj in
-        let value, value_names = extract_names_in_expr value in
-        (Set { obj; value; field }, obj_names @ value_names)
-    | Get { obj; field } ->
-        let obj, names = extract_names_in_expr obj in
-        (Get { obj; field }, names)
-    | SetIdx { obj; idx; value } ->
+    | Set { obj; idx; value } ->
         let obj, obj_names = extract_names_in_expr obj in
         let idx, idx_names = extract_names_in_expr idx in
         let value, value_names = extract_names_in_expr value in
-        (SetIdx { obj; idx; value }, obj_names @ idx_names @ value_names)
-    | GetIdx { obj; idx } ->
+        (Set { obj; idx; value }, obj_names @ idx_names @ value_names)
+    | Get { obj; idx } ->
         let obj, obj_names = extract_names_in_expr obj in
         let idx, idx_names = extract_names_in_expr idx in
-        (GetIdx { obj; idx }, obj_names @ idx_names)
+        (Get { obj; idx }, obj_names @ idx_names)
 
 let rec extract_names_in_prog =
   let open Syntax.Prog in
@@ -328,7 +321,7 @@ let parse_op () =
 
 let parse_obj () =
   let open Syntax in
-  let (Ex expr) = parse_expr "let x = {} in x.y := 3; x.y" in
+  let (Ex expr) = parse_expr {|let x = {} in x["y"] := 3; x["y"]|} in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse obj" ~actual:(Expr.sexp_of_t expr)
     ~expected:
@@ -340,8 +333,8 @@ let parse_obj () =
                bound = Alloc;
                body =
                  Seq
-                   ( Set { obj = Var "x"; field = "y"; value = Const (Int 3) },
-                     Get { obj = Var "x"; field = "y" } );
+                   ( Set { obj = Var "x"; idx = Const (String "y"); value = Const (Int 3) },
+                     Get { obj = Var "x"; idx = Const (String "y") } );
              }))
 
 let parse_indexing () =
@@ -358,7 +351,7 @@ let parse_indexing () =
                bound = Alloc;
                body =
                  Seq
-                   ( SetIdx
+                   ( Set
                        {
                          obj = Var "x";
                          idx =
@@ -373,10 +366,20 @@ let parse_indexing () =
                      Bop
                        {
                          op = Plus;
-                         left = GetIdx { obj = Var "x"; idx = Const (Int 4) };
+                         left = Get { obj = Var "x"; idx = Const (Int 4) };
                          right = Const (Int 1);
                        } );
              }))
+
+let parse_string () =
+  let open Syntax in
+  let (Ex expr) = parse_expr {|"hello world"; "\"\\ hello"|} in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse string" ~actual:(Expr.sexp_of_t expr)
+    ~expected:
+      Expr.(
+        sexp_of_t
+          (Seq (Const (String "hello world"), Const (String "\"\\ hello"))))
 
 let js_var () =
   let open Syntax in
@@ -400,7 +403,7 @@ let js_jsx () =
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "(); Comp (); ()" |> Prog.sexp_of_t)
+    ~expected:(parse_prog "view [()]; view [Comp ()]; ()" |> Prog.sexp_of_t)
 
 let js_op () =
   let open Syntax in
@@ -453,8 +456,8 @@ let js_pattern_object () =
     ~expected:
       (parse_prog {|
 let q' = q in
-  let x = q'.x in
-  let y = q'.y in
+let x = q'["x"] in
+let y = q'["y"] in
 ()|}
       |> normalize_prog)
 
@@ -482,8 +485,8 @@ let js_pattern_nested () =
       (parse_prog
          {|
 let q' = q in
-let x = q'.x in
-let y = x.y in
+let x = q'["x"] in
+let y = x["y"] in
 let a = y[0] in
 let b = y[1] in
 ()|}
@@ -499,7 +502,7 @@ let js_object () =
     ~expected:
       (parse_prog
          {|
-let p = (let obj = {} in obj.y := 1; obj.z := 2; obj[3] := 4; obj) in p.y; p[1+2]; ()|}
+let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]; ()|}
       |> normalize_prog)
 
 let no_side_effect () =
@@ -778,8 +781,8 @@ let set_in_effect_guarded_step_n_times_with_obj () =
     parse_prog
       {|
 let C x =
-  stt s, setS = (let r = {} in r.x := 42; r) in
-  eff (if s.x <= 45 then setS (fun s -> (let r = {} in r.x := s.x + 1; r)));
+  stt s, setS = (let r = {} in r["x"] := 42; r) in
+  eff (if s["x"] <= 45 then setS (fun s -> (let r = {} in r["x"] := s["x"] + 1; r)));
   view [()]
 ;;
 view [C ()]
@@ -793,8 +796,8 @@ let updating_obj_without_set_does_not_rerender () =
     parse_prog
       {|
 let C x =
-  stt s, setS = (let r = {} in r.x := 42; r) in
-  eff (s.x := 43);
+  stt s, setS = (let r = {} in r["x"] := 42; r) in
+  eff (s["x"] := 43);
   view [()]
 ;;
 view [C ()]
@@ -826,6 +829,7 @@ let () =
           test_case "op" `Quick parse_op;
           test_case "obj" `Quick parse_obj;
           test_case "indexing" `Quick parse_indexing;
+          test_case "string" `Quick parse_string;
         ] );
       ( "convert",
         [

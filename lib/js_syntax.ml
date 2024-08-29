@@ -53,14 +53,15 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
            | Property (_, { key; pattern; default = None; _ }) ->
                let key =
                  match key with
-                 | StringLiteral (_, { value; _ }) -> value
-                 | NumberLiteral (_, { value; _ }) -> Float.to_string value
+                 | StringLiteral (_, { value; _ }) -> Const (String value)
+                 | NumberLiteral (_, { value; _ }) -> Const (Int (Int.of_float value))
                  | BigIntLiteral _ -> failwith "TODO"
-                 | Identifier (_, { name; _ }) -> name
+                 | Identifier (_, { name; _ }) -> Const (String name)
                  | Computed _ -> failwith "TODO"
                in
                convert_pattern pattern
-                 ~base_expr:(Get { obj = Var base_name; field = key })
+                 ~base_expr:
+                   (Get { obj = Var base_name; idx = key })
            | Property (_, { default = Some _; _ }) -> failwith "TODO"
            | RestElement _ -> failwith "TODO")
   | Array { elements; _ } ->
@@ -70,7 +71,11 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
            | Element (_, { argument; default = None }) ->
                convert_pattern argument
                  ~base_expr:
-                   (GetIdx { obj = Var base_name; idx = Const (Int i) })
+                   (Get
+                      {
+                        obj = Var base_name;
+                        idx = Const (Int i);
+                      })
            | Element (_, { default = Some _; _ }) -> failwith "TODO"
            | RestElement _ -> failwith "TODO"
            | Hole _ -> [])
@@ -235,9 +240,10 @@ and convert_member (obj : Syntax.Expr.hook_free_t)
     Syntax.Expr.hook_free_t =
   let open Syntax.Expr in
   match property with
-  | PropertyIdentifier (_, { name; _ }) -> Get { obj; field = name }
+  | PropertyIdentifier (_, { name; _ }) ->
+      Get { obj; idx = Const (String name) }
   | PropertyPrivateName _ -> failwith "TODO"
-  | PropertyExpression expr -> GetIdx { obj; idx = convert_expr expr }
+  | PropertyExpression expr -> Get { obj; idx = convert_expr expr }
 
 and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
     Syntax.Expr.hook_free_t =
@@ -251,7 +257,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
             match element with
             | Expression expr ->
                 let elem = convert_expr expr in
-                SetIdx { obj = Var arr; idx = Const (Int i); value = elem }
+                Set { obj = Var arr; idx = Const (Int i); value = elem }
             | _ -> failwith "TODO")
       in
       let asgns =
@@ -286,10 +292,10 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
         | Identifier (_, { name; _ }) -> name
         | _ -> failwith "TODO: non-identifier JSX element name"
       in
-      App { fn = Var name; arg = Const Unit }
+      View [ App { fn = Var name; arg = Const Unit } ]
   | JSXFragment _ ->
       (* TODO *)
-      Const Unit
+      View [ Const Unit ]
   | StringLiteral _ -> failwith "TODO"
   | BooleanLiteral { value; _ } -> Const (Bool value)
   | NullLiteral _ ->
@@ -318,17 +324,18 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
       let obj = fresh () in
       let convert_key_to_set prop_value = function
         | Flow_ast.Expression.Object.Property.StringLiteral (_, { value; _ }) ->
-            Set { obj = Var obj; field = value; value = prop_value }
+            Set
+              { obj = Var obj; idx = Const (String value); value = prop_value }
         | NumberLiteral (_, { value; _ }) ->
-            SetIdx
+            Set
               {
                 obj = Var obj;
-                idx = Const (Int (Float.to_int value));
+                idx = Const (Int (Int.of_float value));
                 value = prop_value;
               }
         | BigIntLiteral _ -> failwith "TODO"
         | Identifier (_, { name; _ }) ->
-            Set { obj = Var obj; field = name; value = prop_value }
+            Set { obj = Var obj; idx = Const (String name); value = prop_value }
         | PrivateName _ -> failwith "TODO"
         | Computed _ -> failwith "TODO"
       in

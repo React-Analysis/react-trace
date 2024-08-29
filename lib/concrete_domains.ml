@@ -18,7 +18,8 @@ module M : Domains.S = struct
       | Unit
       | Bool of bool
       | Int of int
-      | Loc of Loc.t
+      | String of string
+      | Loc of loc
       | View_spec of view_spec list
       | Clos of clos
       | Set_clos of set_clos
@@ -183,6 +184,7 @@ module M : Domains.S = struct
 
     let to_bool = function Bool b -> Some b | _ -> None
     let to_int = function Int i -> Some i | _ -> None
+    let to_string = function String s -> Some s | _ -> None
     let to_loc = function Loc l -> Some l | _ -> None
 
     let to_vs = function
