@@ -477,7 +477,13 @@ module Report_box = struct
       match part_view with
       | Root -> bold_text "•" |> align
       | Node { comp_spec; dec; st_store; eff_q } ->
-          let comp_name_box = bold_text comp_spec.comp.name |> align in
+          let comp_spec_box =
+            let arg = Sexp.to_string (sexp_of_value comp_spec.arg) in
+            B.(
+              hlist ~bars:false
+                [ bold_text comp_spec.comp.name; text " "; text arg ])
+            |> align
+          in
           let dec_box =
             let dec = sexp_of_decision dec |> Sexp.to_string in
             B.(hlist_map text [ "dec"; dec ])
@@ -499,7 +505,7 @@ module Report_box = struct
             let eff_q = Job_q.to_list eff_q |> List.map ~f:clos in
             B.(hlist [ text "eff"; vlist eff_q ])
           in
-          B.vlist [ comp_name_box; dec_box; stt_box; eff_box ]
+          B.vlist [ comp_spec_box; dec_box; stt_box; eff_box ]
     in
     let children =
       Snoc_list.to_list children |> B.hlist_map (fun t -> tree t |> align)
