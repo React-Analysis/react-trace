@@ -173,6 +173,13 @@ module Report_box = struct
 
   let align ?(h = `Center) ?(v = `Center) = B.align ~h ~v
   let bold_text = B.(text_with_style Style.bold)
+
+  let trunc ?(max_len = 10) s =
+    if String.length s > max_len then String.prefix s max_len ^ "…" else s
+
+  let value (v : value) : B.t =
+    sexp_of_value v |> Sexp.to_string |> trunc |> B.text
+
   let clos ({ param; _ } : clos) : B.t = "λ" ^ param ^ ".<body>" |> B.text
   let leaf_null () : B.t = B.text "()"
   let leaf_int (i : int) : B.t = B.int i
@@ -187,12 +194,11 @@ module Report_box = struct
     let part_view_box =
       match part_view with
       | Root -> bold_text "•" |> align
-      | Node { comp_spec; dec; st_store; eff_q } ->
+      | Node { comp_spec = { comp; arg; _ }; dec; st_store; eff_q } ->
           let comp_spec_box =
-            let arg = Sexp.to_string (sexp_of_value comp_spec.arg) in
             B.(
               hlist ~bars:false
-                [ bold_text comp_spec.comp.name; text " "; text arg ])
+                [ bold_text (trunc comp.name); text " "; value arg ])
             |> align
           in
           let dec_box =
