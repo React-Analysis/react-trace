@@ -440,23 +440,6 @@ let rec eval_top (prog : Prog.t) : view_spec list =
       let env = Env.extend env ~id:comp.name ~value:(Comp_clos { comp; env }) in
       perform (In_env env) eval_top p
 
-let step_prog (prog : Prog.t) : Path.t =
-  Logger.step_prog prog;
-  let vss = match_with eval_top prog env_h ~env:Env.empty in
-  let path = perform Alloc_pt in
-  perform (Update_ent (path, { part_view = Root; children = [] }));
-  render path vss;
-  commit_effs path;
-  path
-
-let step_path (path : Path.t) : bool =
-  Logger.step_path path;
-  let has_updates = update path None in
-  if has_updates then commit_effs path;
-  has_updates
-
-type run_info = { steps : int; mem : Tree_mem.t }
-
 module Report_box = struct
   module B = PrintBox
 
@@ -519,22 +502,50 @@ module Report_box = struct
       flush stdout)
 end
 
+let step_prog ?(report : bool = false) (prog : Prog.t) : Path.t =
+  Logger.step_prog prog;
+  let vss = match_with eval_top prog env_h ~env:Env.empty in
+  let path = perform Alloc_pt in
+  perform (Update_ent (path, { part_view = Root; children = [] }));
+  render path vss;
+
+  if report then (
+    Logs.info (fun m -> m "Rendered");
+    Report_box.path path |> Report_box.log);
+  commit_effs path;
+  if report then (
+    Logs.info (fun m -> m "After effects");
+    Report_box.path path |> Report_box.log);
+  path
+
+let step_path ?(report : bool = false) (path : Path.t) : bool =
+  Logger.step_path path;
+  let has_updates = update path None in
+
+  if has_updates then (
+    if report then (
+      Logs.info (fun m -> m "Rendered");
+      Report_box.path path |> Report_box.log);
+    commit_effs path;
+    if report then (
+      Logs.info (fun m -> m "After effects");
+      Report_box.path path |> Report_box.log));
+
+  has_updates
+
+type run_info = { steps : int; mem : Tree_mem.t }
+
 let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     =
   Logger.run prog;
   let driver () =
     let cnt = ref 1 in
     Logs.info (fun m -> m "Step prog %d" !cnt);
-    let root_path = step_prog prog in
-    (if report then Report_box.(path root_path |> log));
+    let root_path = step_prog ~report prog in
 
     let rec loop () =
       Logs.info (fun m -> m "Step path %d" (!cnt + 1));
-      if
-        let stepped = step_path root_path in
-        (if report then Report_box.(path root_path |> log));
-        stepped
-      then (
+      if step_path ~report root_path then (
         Int.incr cnt;
         match fuel with Some n when !cnt >= n -> () | _ -> loop ())
     in
