@@ -35,6 +35,9 @@ type _ Stdlib.Effect.t += Re_render_limit : int t
 
 exception Too_many_re_renders
 
+(* For reporting *)
+type _ Stdlib.Effect.t += Report : bool t
+
 let re_render_limit_h : 'a. ('a, re_render_limit:int -> 'a) handler =
   {
     retc = (fun v ~re_render_limit:_ -> v);
@@ -353,6 +356,7 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
   let path = perform Rd_pt in
   match perform (Get_dec path) with
   | Retry ->
+      if perform Report then Report_box.log ~msg:"Will retry" path;
       match_with
         (eval_mult ~re_render:(re_render + 1))
         expr ptph_h ~ptph:(path, P_retry)
@@ -503,23 +507,25 @@ let rec eval_top (prog : Prog.t) : view_spec list =
       let env = Env.extend env ~id:comp.name ~value:(Comp_clos { comp; env }) in
       perform (In_env env) eval_top p
 
-let step_prog ?(report : bool = false) (prog : Prog.t) : Path.t =
+let step_prog (prog : Prog.t) : Path.t =
   Logger.step_prog prog;
   let vss = match_with eval_top prog env_h ~env:Env.empty in
   let path = perform Alloc_pt in
   perform (Update_ent (path, { part_view = Root; children = [] }));
   render path vss;
 
+  let report = perform Report in
   if report then Report_box.log ~msg:"Rendered" path;
   commit_effs path;
   if report then Report_box.log ~msg:"After effects" path;
   path
 
-let step_path ?(report : bool = false) (path : Path.t) : bool =
+let step_path (path : Path.t) : bool =
   Logger.step_path path;
   let has_updates = update path None in
 
   if has_updates then (
+    let report = perform Report in
     if report then Report_box.log ~msg:"Rendered" path;
     commit_effs path;
     if report then Report_box.log ~msg:"After effects" path);
@@ -531,19 +537,34 @@ type run_info = { steps : int; mem : Tree_mem.t }
 let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     =
   Logger.run prog;
+
   let driver () =
     let cnt = ref 1 in
     Logs.info (fun m -> m "Step prog %d" !cnt);
-    let root_path = step_prog ~report prog in
+    let root_path = step_prog prog in
 
     let rec loop () =
       Logs.info (fun m -> m "Step path %d" (!cnt + 1));
-      if step_path ~report root_path then (
+      if step_path root_path then (
         Int.incr cnt;
         match fuel with Some n when !cnt >= n -> () | _ -> loop ())
     in
     loop ();
     !cnt
   in
-  let steps, mem = match_with driver () mem_h ~mem:Tree_mem.empty in
+
+  let steps, mem =
+    match_with
+      (fun () ->
+        try_with driver ()
+          {
+            effc =
+              (fun (type a) (eff : a t) ->
+                match eff with
+                | Report ->
+                    Some (fun (k : (a, _) continuation) -> continue k report)
+                | _ -> None);
+          })
+      () mem_h ~mem:Tree_mem.empty
+  in
   { steps; mem }
