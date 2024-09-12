@@ -457,15 +457,47 @@ let step_path (path : Path.t) : bool =
 
 type run_info = { steps : int; mem : Tree_mem.t }
 
-let run ?(fuel : int option) (prog : Prog.t) : run_info =
+module Report_box = struct
+  module B = PrintBox
+
+  let leaf_null () : B.t = B.text "()" |> B.align ~h:`Center ~v:`Top
+  let leaf_int (i : int) : B.t = B.int i |> B.align ~h:`Center ~v:`Top
+
+  let rec tree : tree -> B.t = function
+    | Leaf_null -> leaf_null ()
+    | Leaf_int i -> leaf_int i
+    | Path p -> path p
+
+  and path (pt : Path.t) : B.t =
+    let { part_view; children } = perform (Lookup_ent pt) in
+    let comp_name =
+      match part_view with
+      | Root -> "•"
+      | Node { comp_spec; _ } -> comp_spec.comp.name
+    in
+    let comp_name_box = B.text comp_name |> B.align ~h:`Center ~v:`Top in
+    let children = Snoc_list.to_list children |> B.hlist_map tree in
+    B.(vlist [ comp_name_box; children ] |> frame)
+
+  let log (box : B.t) : unit =
+    PrintBox_text.output stdout box;
+    Out_channel.newline stdout;
+    Out_channel.flush stdout
+end
+
+let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
+    =
   Logger.run prog;
   let driver () =
     let cnt = ref 1 in
     Logs.info (fun m -> m "Step prog %d" !cnt);
-    let path = step_prog prog in
+    let root_path = step_prog prog in
+    (if report then Report_box.(path root_path |> log));
+
     let rec loop () =
       Logs.info (fun m -> m "Step path %d" (!cnt + 1));
-      if step_path path then (
+      if step_path root_path then (
+        (if report then Report_box.(path root_path |> log));
         Int.incr cnt;
         match fuel with Some n when !cnt >= n -> () | _ -> loop ())
     in
