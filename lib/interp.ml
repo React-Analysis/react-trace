@@ -227,7 +227,7 @@ module Report_box = struct
     let children =
       Snoc_list.to_list children |> B.hlist_map (fun t -> tree t |> align)
     in
-    B.(vlist [ part_view_box; children |> hpad 1 ] |> frame)
+    B.(vlist [ part_view_box; children ] |> frame)
 
   let log ?(msg : string option) (pt : Path.t) : unit =
     (match msg with Some msg -> Logs.info (fun m -> m "%s" msg) | None -> ());
