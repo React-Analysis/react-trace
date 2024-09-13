@@ -35,9 +35,6 @@ type _ Stdlib.Effect.t += Re_render_limit : int t
 
 exception Too_many_re_renders
 
-(* For reporting *)
-type _ Stdlib.Effect.t += Report : bool t
-
 let re_render_limit_h : 'a. ('a, re_render_limit:int -> 'a) handler =
   {
     retc = (fun v ~re_render_limit:_ -> v);
@@ -171,6 +168,9 @@ end
 module Report_box = struct
   module B = PrintBox
 
+  (* For reporting *)
+  type _ Stdlib.Effect.t += Log : { msg : string; path : Path.t } -> unit t
+
   let align ?(h = `Center) ?(v = `Center) = B.align ~h ~v
   let bold_text = B.(text_with_style Style.bold)
 
@@ -235,6 +235,18 @@ module Report_box = struct
     Out_channel.(
       newline stdout;
       flush stdout)
+
+  let log_h (report : bool) =
+    {
+      effc =
+        (fun (type a) (eff : a t) ->
+          match eff with
+          | Log { msg; path } ->
+              Some
+                (fun (k : (a, _) continuation) ->
+                  continue k (if report then log ~msg path else ()))
+          | _ -> None);
+    }
 end
 
 let rec eval : type a. a Expr.t -> value =
@@ -362,7 +374,7 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
   let path = perform Rd_pt in
   match perform (Get_dec path) with
   | Retry ->
-      if perform Report then Report_box.log ~msg:"Will retry" path;
+      perform (Report_box.Log { msg = "Will retry"; path });
       match_with
         (eval_mult ~re_render:(re_render + 1))
         expr ptph_h ~ptph:(path, P_retry)
@@ -520,10 +532,9 @@ let step_prog (prog : Prog.t) : Path.t =
   perform (Update_ent (path, { part_view = Root; children = [] }));
   render path vss;
 
-  let report = perform Report in
-  if report then Report_box.log ~msg:"Rendered" path;
+  perform (Report_box.Log { msg = "Rendered"; path });
   commit_effs path;
-  if report then Report_box.log ~msg:"After effects" path;
+  perform (Report_box.Log { msg = "After effects"; path });
   path
 
 let step_path (path : Path.t) : bool =
@@ -531,10 +542,9 @@ let step_path (path : Path.t) : bool =
   let has_updates = update path None in
 
   if has_updates then (
-    let report = perform Report in
-    if report then Report_box.log ~msg:"Rendered" path;
+    perform (Report_box.Log { msg = "Rendered"; path });
     commit_effs path;
-    if report then Report_box.log ~msg:"After effects" path);
+    perform (Report_box.Log { msg = "After effects"; path }));
 
   has_updates
 
@@ -561,16 +571,7 @@ let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
 
   let steps, mem =
     match_with
-      (fun () ->
-        try_with driver ()
-          {
-            effc =
-              (fun (type a) (eff : a t) ->
-                match eff with
-                | Report ->
-                    Some (fun (k : (a, _) continuation) -> continue k report)
-                | _ -> None);
-          })
+      (fun () -> try_with driver () (Report_box.log_h report))
       () mem_h ~mem:Tree_mem.empty
   in
   { steps; mem }
