@@ -32,6 +32,8 @@
   logs
   menhir
   ppx_jane
+  printbox
+  printbox-text
   stdio
   (alcotest :with-test))
  (tags
