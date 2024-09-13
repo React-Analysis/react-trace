@@ -2,4 +2,5 @@ pin-depends: [
   [ "flow_parser.0.239.1" "git+https://github.com/facebook/flow#5d1b246a1ac8a8fc4e431b835ab8fb7f6f5ebd30" ]
   [ "printbox.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
   [ "printbox-text.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
+  [ "printbox-html.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
 ]
