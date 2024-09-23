@@ -33,6 +33,7 @@
   menhir
   ppx_jane
   printbox
+  printbox-html
   printbox-text
   stdio
   (alcotest :with-test))

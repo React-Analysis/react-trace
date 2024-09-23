@@ -229,14 +229,16 @@ module Report_box = struct
     in
     B.(vlist [ part_view_box; children ] |> frame)
 
-  let log ?(msg : string option) (pt : Path.t) : unit =
+  let log ?(msg : string option) ?(html : bool = false) (pt : Path.t) : unit =
     (match msg with Some msg -> Logs.info (fun m -> m "%s" msg) | None -> ());
-    PrintBox_text.output stdout (path pt);
-    Out_channel.(
-      newline stdout;
-      flush stdout)
+    if not html then (
+      PrintBox_text.output stdout (path pt);
+      Out_channel.(
+        newline stdout;
+        flush stdout))
+    else PrintBox_html.to_string (path pt) |> print_endline
 
-  let log_h (report : bool) =
+  let log_h (report : [ `Mute | `Text | `Html ]) =
     {
       effc =
         (fun (type a) (eff : a t) ->
@@ -244,7 +246,11 @@ module Report_box = struct
           | Log { msg; path } ->
               Some
                 (fun (k : (a, _) continuation) ->
-                  continue k (if report then log ~msg path else ()))
+                  continue k
+                    (match report with
+                    | `Mute -> ()
+                    | `Text -> log ~msg path
+                    | `Html -> log ~msg ~html:true path))
           | _ -> None);
     }
 end
@@ -550,8 +556,8 @@ let step_path (path : Path.t) : bool =
 
 type run_info = { steps : int; mem : Tree_mem.t }
 
-let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
-    =
+let run ?(fuel : int option) ?(report : [ `Mute | `Text | `Html ] = `Mute)
+    (prog : Prog.t) : run_info =
   Logger.run prog;
 
   let driver () =
