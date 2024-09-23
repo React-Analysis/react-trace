@@ -119,6 +119,7 @@ module type St_store = sig
   val empty : t
   val lookup : t -> label:Label.t -> value * job_q
   val update : t -> label:Label.t -> value:value * job_q -> t
+  val to_alist : t -> (Label.t * (value * job_q)) list
   val sexp_of_t : t -> Sexp.t
 end
 

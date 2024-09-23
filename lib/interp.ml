@@ -204,6 +204,90 @@ module Env = struct
   let lookup_exn env ~id = lookup env ~id |> value_exn (Unbound_var id)
 end
 
+module Report_box = struct
+  module B = PrintBox
+
+  (* For reporting *)
+  type _ Stdlib.Effect.t += Log : { msg : string; path : Path.t } -> unit t
+
+  let align ?(h = `Center) ?(v = `Center) = B.align ~h ~v
+  let bold_text = B.(text_with_style Style.bold)
+
+  let trunc ?(max_len = 10) s =
+    if String.length s > max_len then String.prefix s max_len ^ "…" else s
+
+  let value (v : value) : B.t =
+    sexp_of_value v |> Sexp.to_string |> trunc |> B.text
+
+  let clos ({ param; _ } : clos) : B.t = "λ" ^ param ^ ".<body>" |> B.text
+  let leaf_null () : B.t = B.text "()"
+  let leaf_int (i : int) : B.t = B.int i
+
+  let rec tree : tree -> B.t = function
+    | Leaf_null -> leaf_null ()
+    | Leaf_int i -> leaf_int i
+    | Path p -> path p
+
+  and path (pt : Path.t) : B.t =
+    let { part_view; children } = perform (Lookup_ent pt) in
+    let part_view_box =
+      match part_view with
+      | Root -> bold_text "•" |> align
+      | Node { comp_spec = { comp; arg; _ }; dec; st_store; eff_q } ->
+          let comp_spec_box =
+            B.(
+              hlist ~bars:false
+                [ bold_text (trunc comp.name); text " "; value arg ])
+            |> align
+          in
+          let dec_box =
+            let dec = sexp_of_decision dec |> Sexp.to_string in
+            B.(hlist_map text [ "dec"; dec ])
+          in
+          let stt_box =
+            let st_trees =
+              let st_store = St_store.to_alist st_store in
+              List.map st_store ~f:(fun (lbl, (value, job_q)) ->
+                  let lbl = string_of_int lbl in
+                  let value = Sexp.to_string (sexp_of_value value) in
+                  let job_q = Job_q.to_list job_q |> List.map ~f:clos in
+
+                  B.(tree (text (lbl ^ " ↦ " ^ value)) job_q))
+              |> B.vlist
+            in
+            B.(hlist [ text "stt"; st_trees ])
+          in
+          let eff_box =
+            let eff_q = Job_q.to_list eff_q |> List.map ~f:clos in
+            B.(hlist [ text "eff"; vlist eff_q ])
+          in
+          B.vlist [ comp_spec_box; dec_box; stt_box; eff_box ]
+    in
+    let children =
+      Snoc_list.to_list children |> B.hlist_map (fun t -> tree t |> align)
+    in
+    B.(vlist [ part_view_box; children ] |> frame)
+
+  let log ?(msg : string option) (pt : Path.t) : unit =
+    (match msg with Some msg -> Logs.info (fun m -> m "%s" msg) | None -> ());
+    PrintBox_text.output stdout (path pt);
+    Out_channel.(
+      newline stdout;
+      flush stdout)
+
+  let log_h (report : bool) =
+    {
+      effc =
+        (fun (type a) (eff : a t) ->
+          match eff with
+          | Log { msg; path } ->
+              Some
+                (fun (k : (a, _) continuation) ->
+                  continue k (if report then log ~msg path else ()))
+          | _ -> None);
+    }
+end
+
 let rec eval : type a. a Expr.t -> value =
  fun expr ->
   Logger.eval expr;
@@ -346,6 +430,7 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
   let path = perform Rd_pt in
   match perform (Get_dec path) with
   | Retry ->
+      perform (Report_box.Log { msg = "Will retry"; path });
       match_with
         (eval_mult ~re_render:(re_render + 1))
         expr ptph_h ~ptph:(path, P_retry)
@@ -502,35 +587,45 @@ let step_prog (prog : Prog.t) : Path.t =
   let path = perform Alloc_pt in
   perform (Update_ent (path, { part_view = Root; children = [] }));
   render path vss;
+
+  perform (Report_box.Log { msg = "Rendered"; path });
   commit_effs path;
+  perform (Report_box.Log { msg = "After effects"; path });
   path
 
 let step_path (path : Path.t) : bool =
   Logger.step_path path;
   let has_updates = update path None in
-  if has_updates then commit_effs path;
+
+  if has_updates then (
+    perform (Report_box.Log { msg = "Rendered"; path });
+    commit_effs path;
+    perform (Report_box.Log { msg = "After effects"; path }));
+
   has_updates
 
 type run_info = { steps : int; mem : Memory.t; treemem : Tree_mem.t }
 
-let run ?(fuel : int option) (prog : Prog.t) : run_info =
+let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
+    =
   Logger.run prog;
+
   let driver () =
     let cnt = ref 1 in
     Logs.info (fun m -> m "Step prog %d" !cnt);
-    let path = step_prog prog in
+    let root_path = step_prog prog in
+
     let rec loop () =
       Logs.info (fun m -> m "Step path %d" (!cnt + 1));
-      if step_path path then (
+      if step_path root_path then (
         Int.incr cnt;
         match fuel with Some n when !cnt >= n -> () | _ -> loop ())
     in
     loop ();
     !cnt
   in
-  let (steps, mem), treemem =
-    ( (driver |> fun f x -> match_with f x mem_h ~mem:Memory.empty) |> fun f x ->
-      match_with f x treemem_h ~treemem:Tree_mem.empty )
-      ()
-  in
+  let driver () = match_with driver () mem_h ~mem:Memory.empty in
+  let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
+  let driver () = try_with driver () (Report_box.log_h report) in
+  let (steps, mem), treemem = driver () in
   { steps; mem; treemem }

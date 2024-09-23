@@ -98,6 +98,7 @@ module M : Domains.S = struct
     let empty = Label.Map.empty
     let lookup store ~label = Map.find_exn store label
     let update store ~label ~value = Map.set store ~key:label ~data:value
+    let to_alist store = Map.to_alist ~key_order:`Increasing store
   end
 
   and Job_q : (Domains.Job_q with type elt := T.clos and type t = T.job_q) =

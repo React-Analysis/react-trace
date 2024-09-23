@@ -35,6 +35,7 @@ let () =
   let opt_pp = ref false in
   let opt_parse_js = ref false in
   let opt_fuel = ref None in
+  let opt_report = ref false in
   let opt_verbosity = ref Logs.Info in
 
   let usage_msg =
@@ -49,6 +50,9 @@ let () =
       ( "-verbose",
         Arg.Unit (fun _ -> opt_verbosity := Logs.Debug),
         "Verbose mode" );
+      ( "-report",
+        Arg.Unit (fun _ -> opt_report := true),
+        "Report the view trees" );
       ("-fuel", Arg.Int (fun n -> opt_fuel := Some n), "[fuel] Run with fuel");
     ]
   in
@@ -69,6 +73,8 @@ let () =
     if !opt_pp then
       Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)
     else
-      let { Interp.steps; _ } = Interp.run ?fuel:!opt_fuel prog in
+      let { Interp.steps; _ } =
+        Interp.run ?fuel:!opt_fuel ~report:!opt_report prog
+      in
       printf "\nSteps: %d\n" steps;
       Stdlib.exit (if Logs.err_count () > 0 then 1 else 0))
