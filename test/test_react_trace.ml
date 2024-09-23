@@ -32,9 +32,14 @@ let rec alpha_conv_expr_blind :
             con = alpha_conv_expr_blind bindings con;
             alt = alpha_conv_expr_blind bindings alt;
           }
-    | Fn { param; body } -> Fn { param; body = alpha_conv_expr_blind bindings body }
+    | Fn { param; body } ->
+        Fn { param; body = alpha_conv_expr_blind bindings body }
     | App { fn; arg } ->
-        App { fn = alpha_conv_expr_blind bindings fn; arg = alpha_conv_expr_blind bindings arg }
+        App
+          {
+            fn = alpha_conv_expr_blind bindings fn;
+            arg = alpha_conv_expr_blind bindings arg;
+          }
     | Let { id; bound; body } ->
         Let
           {
@@ -49,10 +54,12 @@ let rec alpha_conv_expr_blind :
             set = bindings set;
             init = alpha_conv_expr_blind bindings init;
             body = alpha_conv_expr_blind bindings body;
-            label = (bindings (Int.to_string label) |> Int.of_string);
+            label = bindings (Int.to_string label) |> Int.of_string;
           }
     | Eff e -> Eff (alpha_conv_expr_blind bindings e)
-    | Seq (e1, e2) -> Seq (alpha_conv_expr_blind bindings e1, alpha_conv_expr_blind bindings e2)
+    | Seq (e1, e2) ->
+        Seq
+          (alpha_conv_expr_blind bindings e1, alpha_conv_expr_blind bindings e2)
     | Bop { left; right; op } ->
         Bop
           {
@@ -69,10 +76,17 @@ let rec alpha_conv_expr_blind :
             idx = alpha_conv_expr_blind bindings idx;
             value = alpha_conv_expr_blind bindings value;
           }
-    | Get { obj; idx } -> Get { obj = alpha_conv_expr_blind bindings obj; idx = alpha_conv_expr_blind bindings idx }
+    | Get { obj; idx } ->
+        Get
+          {
+            obj = alpha_conv_expr_blind bindings obj;
+            idx = alpha_conv_expr_blind bindings idx;
+          }
 
 let rec alpha_conv_expr :
-    type a. (string -> string) -> a Syntax.Expr.t -> a Syntax.Expr.t -> a Syntax.Expr.t =
+    type a.
+    (string -> string) -> a Syntax.Expr.t -> a Syntax.Expr.t -> a Syntax.Expr.t
+    =
   let open Syntax.Expr in
   fun bindings base src ->
     match (base, src) with
@@ -82,9 +96,11 @@ let rec alpha_conv_expr :
         let len = List.length es in
         let len' = List.length es' in
         if len < len' then
-          View (List.map2_exn es (List.take es' len) ~f:(alpha_conv_expr bindings))
+          View
+            (List.map2_exn es (List.take es' len) ~f:(alpha_conv_expr bindings))
         else if len > len' then
-          View (List.map2_exn (List.take es len') es' ~f:(alpha_conv_expr bindings))
+          View
+            (List.map2_exn (List.take es len') es' ~f:(alpha_conv_expr bindings))
         else View (List.map2_exn es es' ~f:(alpha_conv_expr bindings))
     | Cond { pred; con; alt }, Cond { pred = pred'; con = con'; alt = alt' } ->
         Cond
@@ -97,7 +113,11 @@ let rec alpha_conv_expr :
         let bindings' x = if String.(x = param') then param else bindings x in
         Fn { param; body = alpha_conv_expr bindings' body body' }
     | App { fn; arg }, App { fn = fn'; arg = arg' } ->
-        App { fn = alpha_conv_expr bindings fn fn'; arg = alpha_conv_expr bindings arg arg' }
+        App
+          {
+            fn = alpha_conv_expr bindings fn fn';
+            arg = alpha_conv_expr bindings arg arg';
+          }
     | Let { id; bound; body }, Let { id = id'; bound = bound'; body = body' } ->
         let bindings' x = if String.(x = id') then id else bindings x in
         Let
@@ -106,8 +126,10 @@ let rec alpha_conv_expr :
             bound = alpha_conv_expr bindings bound bound';
             body = alpha_conv_expr bindings' body body';
           }
-    | Stt { stt; set; init; body; label }, Stt { stt = stt'; set = set'; init = init'; body = body'; label = label' }
-      ->
+    | ( Stt { stt; set; init; body; label },
+        Stt
+          { stt = stt'; set = set'; init = init'; body = body'; label = label' }
+      ) ->
         let bindings' x =
           if String.(x = stt') then stt
           else if String.(x = set') then set
@@ -132,7 +154,8 @@ let rec alpha_conv_expr :
             right = alpha_conv_expr bindings right right';
             op = op';
           }
-    | Uop { arg; _ }, Uop { arg = arg'; op = op' } -> Uop { arg = alpha_conv_expr bindings arg arg'; op = op' }
+    | Uop { arg; _ }, Uop { arg = arg'; op = op' } ->
+        Uop { arg = alpha_conv_expr bindings arg arg'; op = op' }
     | Alloc, Alloc -> Alloc
     | Set { obj; idx; value }, Set { obj = obj'; idx = idx'; value = value' } ->
         Set
@@ -142,7 +165,11 @@ let rec alpha_conv_expr :
             value = alpha_conv_expr bindings value value';
           }
     | Get { obj; idx }, Get { obj = obj'; idx = idx' } ->
-        Get { obj = alpha_conv_expr bindings obj obj'; idx = alpha_conv_expr bindings idx idx' }
+        Get
+          {
+            obj = alpha_conv_expr bindings obj obj';
+            idx = alpha_conv_expr bindings idx idx';
+          }
     | _, _ -> alpha_conv_expr_blind bindings src
 
 let rec alpha_conv_prog_blind bindings src =
@@ -159,7 +186,8 @@ let rec alpha_conv_prog bindings base src =
   let open Syntax.Prog in
   match (base, src) with
   | Expr e, Expr e' -> Expr (alpha_conv_expr bindings e e')
-  | Comp ({ name; param; body }, e), Comp ({ name = name'; param = param'; body = body' }, e') ->
+  | ( Comp ({ name; param; body }, e),
+      Comp ({ name = name'; param = param'; body = body' }, e') ) ->
       let body_bindings x = if String.(x = param') then param else bindings x in
       let e_bindings x = if String.(x = name') then name else bindings x in
       Comp
@@ -405,7 +433,12 @@ let parse_obj () =
                bound = Alloc;
                body =
                  Seq
-                   ( Set { obj = Var "x"; idx = Const (String "y"); value = Const (Int 3) },
+                   ( Set
+                       {
+                         obj = Var "x";
+                         idx = Const (String "y");
+                         value = Const (Int 3);
+                       },
                      Get { obj = Var "x"; idx = Const (String "y") } );
              }))
 
@@ -481,22 +514,26 @@ let js_op () =
   let open Syntax in
   let js, _ =
     parse_js
-      "a || b; a && b; a ?? b; \
-       a === b; a !== b; a < b; a <= b; a > b; a >= b; a + b; \
-       a - b; a * b; void a; -a; +a; !a"
+      {|
+a || b; a && b; a ?? b;
+a === b; a !== b; a < b; a <= b; a > b; a >= b;
+a + b; a - b; a * b;
+void a; -a; +a; !a|}
   in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog
-         "(let a' = a in if a' then a' else b); \
-          (let a'' = a in if a'' then b else a''); \
-          (let a''' = a in if a''' = () then b else a'''); \
-          a = b; a <> b; a < b; \
-          a <= b; a > b; a >= b; a + b; a - b; a * b; (a; ()); -a; +a; not a; \
-          ()"
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+         {|
+(let a' = a in if a' then a' else b);
+(let a'' = a in if a'' then b else a'');
+(let a''' = a in if a''' = () then b else a''');
+a = b; a <> b; a < b; a <= b; a > b; a >= b;
+a + b; a - b; a * b;
+(a; ()); -a; +a; not a; ()|}
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_optcall () =
   let open Syntax in
@@ -506,25 +543,23 @@ let js_optcall () =
     ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog "(let a' = a in if a' = () then () else a'(b)); ()"
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_cond () =
   let open Syntax in
   let js, _ = parse_js "if (a) b; else c;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj"
-    ~actual:(Prog.sexp_of_t prog)
-    ~expected:
-      (parse_prog "if a then (b; ()) else (c; ()); ()" |> Prog.sexp_of_t)
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "if a then (b; ()) else (c; ()); ()" |> Prog.sexp_of_t)
 
 let js_pattern_id () =
   let open Syntax in
   let js, _ = parse_js "let p = q;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj"
-    ~actual:(Prog.sexp_of_t prog)
+    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
     ~expected:(parse_prog {|let p = q in ()|} |> Prog.sexp_of_t)
 
 let js_pattern_object () =
@@ -539,7 +574,8 @@ let q' = q in
 let x = q'["x"] in
 let y = q'["y"] in
 ()|}
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_pattern_array () =
   let open Syntax in
@@ -555,7 +591,8 @@ let q' = q in
   let y = q'[1] in
   let z = q'[3] in
 ()|}
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_pattern_nested () =
   let open Syntax in
@@ -572,7 +609,8 @@ let y = x["y"] in
 let a = y[0] in
 let b = y[1] in
 ()|}
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_object () =
   let open Syntax in
@@ -584,7 +622,8 @@ let js_object () =
       (parse_prog
          {|
 let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]; ()|}
-      |> alpha_conv_prog Fun.id prog |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let no_side_effect () =
   let prog =

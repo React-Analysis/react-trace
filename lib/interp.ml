@@ -18,9 +18,9 @@ type _ Stdlib.Effect.t +=
 
 (* memory effects *)
 type _ Stdlib.Effect.t +=
-  | Alloc_loc : obj -> Loc.t t
-  | Lookup_loc : Loc.t -> obj t
-  | Update_loc : Loc.t * obj -> unit t
+  | Alloc_addr : obj -> Addr.t t
+  | Lookup_addr : Addr.t -> obj t
+  | Update_addr : Addr.t * obj -> unit t
 
 (* tree memory effects in eval/eval_mult *)
 type _ Stdlib.Effect.t +=
@@ -111,23 +111,23 @@ let mem_h =
     effc =
       (fun (type a) (eff : a t) ->
         match eff with
-        | Alloc_loc obj ->
+        | Alloc_addr obj ->
             Some
               (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem `Alloc_loc;
-                let loc = Memory.alloc mem in
-                let mem = Memory.update mem ~loc ~obj in
-                continue k loc ~mem)
-        | Lookup_loc loc ->
+                Logger.mem mem `Alloc_addr;
+                let addr = Memory.alloc mem in
+                let mem = Memory.update mem ~addr ~obj in
+                continue k addr ~mem)
+        | Lookup_addr addr ->
             Some
               (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem (`Lookup_loc loc);
-                continue k (Memory.lookup mem ~loc) ~mem)
-        | Update_loc (loc, v) ->
+                Logger.mem mem (`Lookup_addr addr);
+                continue k (Memory.lookup mem ~addr) ~mem)
+        | Update_addr (addr, v) ->
             Some
               (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem (`Update_loc (loc, v));
-                continue k () ~mem:(Memory.update mem ~loc ~obj:v))
+                Logger.mem mem (`Update_addr (addr, v));
+                continue k () ~mem:(Memory.update mem ~addr ~obj:v))
         | _ -> None);
   }
 
@@ -193,7 +193,7 @@ let value_exn exn v =
 let int_of_value_exn v = v |> Value.to_int |> value_exn Type_error
 let bool_of_value_exn v = v |> Value.to_bool |> value_exn Type_error
 let string_of_value_exn v = v |> Value.to_string |> value_exn Type_error
-let loc_of_value_exn v = v |> Value.to_loc |> value_exn Type_error
+let addr_of_value_exn v = v |> Value.to_addr |> value_exn Type_error
 let vs_of_value_exn v = v |> Value.to_vs |> value_exn Type_error
 let vss_of_value_exn v = v |> Value.to_vss |> value_exn Type_error
 let clos_of_value_exn v = v |> Value.to_clos |> value_exn Type_error
@@ -318,20 +318,20 @@ let rec eval : type a. a Expr.t -> value =
       | Times, Int i1, Int i2 -> Int (i1 * i2)
       | _, _, _ -> raise Type_error)
   | Alloc ->
-      let loc = perform (Alloc_loc Obj.empty) in
-      Loc loc
+      let addr = perform (Alloc_addr Obj.empty) in
+      Addr addr
   | Get { obj; idx } ->
-      let loc = eval obj |> loc_of_value_exn in
+      let addr = eval obj |> addr_of_value_exn in
       let i = eval idx |> string_of_value_exn in
-      let obj = perform (Lookup_loc loc) in
+      let obj = perform (Lookup_addr addr) in
       Obj.lookup obj ~field:i
   | Set { obj; idx; value } ->
-      let loc = eval obj |> loc_of_value_exn in
+      let addr = eval obj |> addr_of_value_exn in
       let i = eval idx |> string_of_value_exn in
-      let old_obj = perform (Lookup_loc loc) in
+      let old_obj = perform (Lookup_addr addr) in
       let value = eval value in
       let new_obj = Obj.update old_obj ~field:i ~value in
-      perform (Update_loc (loc, new_obj));
+      perform (Update_addr (addr, new_obj));
       Unit
 
 let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =

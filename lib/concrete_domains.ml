@@ -5,9 +5,8 @@ module M : Domains.S = struct
   module rec T : (Domains.T with type path = int) = struct
     type path = Path.t [@@deriving sexp_of]
     type env = Env.t [@@deriving sexp_of]
-    type loc = Loc.t [@@deriving sexp_of]
+    type addr = Addr.t [@@deriving sexp_of]
     type obj = Obj.t [@@deriving sexp_of]
-    type memory = Memory.t [@@deriving sexp_of]
     type st_store = St_store.t [@@deriving sexp_of]
     type job_q = Job_q.t [@@deriving sexp_of]
 
@@ -19,7 +18,7 @@ module M : Domains.S = struct
       | Bool of bool
       | Int of int
       | String of string
-      | Loc of loc
+      | Addr of addr
       | View_spec of view_spec list
       | Clos of clos
       | Set_clos of set_clos
@@ -64,7 +63,7 @@ module M : Domains.S = struct
     let extend env ~id ~value = Map.set env ~key:id ~data:value
   end
 
-  and Loc : (Domains.Loc with type t = T.loc) = Int
+  and Addr : (Domains.Addr with type t = T.addr) = Int
 
   and Obj : (Domains.Obj with type value = T.value and type t = T.obj) = struct
     type value = T.value [@@deriving sexp_of]
@@ -75,19 +74,16 @@ module M : Domains.S = struct
     let update obj ~field ~value = Map.set obj ~key:field ~data:value
   end
 
-  and Memory :
-    (Domains.Memory
-      with type obj = T.obj
-       and type loc = T.loc
-       and type t = T.memory) = struct
+  and Memory : (Domains.Memory with type obj = T.obj and type addr = T.addr) =
+  struct
     type obj = T.obj [@@deriving sexp_of]
-    type loc = T.loc [@@deriving sexp_of]
-    type t = obj Map.M(Loc).t [@@deriving sexp_of]
+    type addr = T.addr [@@deriving sexp_of]
+    type t = obj Map.M(Addr).t [@@deriving sexp_of]
 
-    let empty = Map.empty (module Loc)
+    let empty = Map.empty (module Addr)
     let alloc = Map.length
-    let lookup memory ~loc = Map.find_exn memory loc
-    let update memory ~loc ~obj = Map.set memory ~key:loc ~data:obj
+    let lookup memory ~addr = Map.find_exn memory addr
+    let update memory ~addr ~obj = Map.set memory ~key:addr ~data:obj
   end
 
   and St_store :
@@ -179,13 +175,13 @@ module M : Domains.S = struct
   module Value = struct
     type nonrec view_spec = view_spec
     type nonrec clos = clos
-    type nonrec loc = loc
+    type nonrec addr = addr
     type t = value
 
     let to_bool = function Bool b -> Some b | _ -> None
     let to_int = function Int i -> Some i | _ -> None
     let to_string = function String s -> Some s | _ -> None
-    let to_loc = function Loc l -> Some l | _ -> None
+    let to_addr = function Addr l -> Some l | _ -> None
 
     let to_vs = function
       | Unit -> Some Vs_null
@@ -201,7 +197,7 @@ module M : Domains.S = struct
       | Unit, Unit -> true
       | Bool b1, Bool b2 -> Bool.(b1 = b2)
       | Int i1, Int i2 -> i1 = i2
-      | Loc l1, Loc l2 -> Loc.(l1 = l2)
+      | Addr l1, Addr l2 -> Addr.(l1 = l2)
       | _, _ -> false
 
     let ( = ) = equal

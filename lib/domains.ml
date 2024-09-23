@@ -4,9 +4,8 @@ open Syntax
 module type T = sig
   type path
   type env
-  type loc
+  type addr
   type obj
-  type memory
   type st_store
   type job_q
   type clos = { param : Id.t; body : Expr.hook_free_t; env : env }
@@ -18,7 +17,7 @@ module type T = sig
     | Bool of bool
     | Int of int
     | String of string
-    | Loc of loc
+    | Addr of addr
     | View_spec of view_spec list
     | Clos of clos
     | Set_clos of set_clos
@@ -54,7 +53,7 @@ module type T = sig
   val sexp_of_part_view : part_view -> Sexp.t
   val sexp_of_tree : tree -> Sexp.t
   val sexp_of_entry : entry -> Sexp.t
-  val sexp_of_loc : loc -> Sexp.t
+  val sexp_of_addr : addr -> Sexp.t
   val sexp_of_obj : obj -> Sexp.t
 end
 
@@ -79,7 +78,7 @@ module type Env = sig
   val sexp_of_t : t -> Sexp.t
 end
 
-module type Loc = sig
+module type Addr = sig
   type t
   type comparator_witness
 
@@ -102,13 +101,13 @@ end
 
 module type Memory = sig
   type obj
-  type loc
+  type addr
   type t
 
   val empty : t
-  val alloc : t -> loc
-  val lookup : t -> loc:loc -> obj
-  val update : t -> loc:loc -> obj:obj -> t
+  val alloc : t -> addr
+  val lookup : t -> addr:addr -> obj
+  val update : t -> addr:addr -> obj:obj -> t
   val sexp_of_t : t -> Sexp.t
 end
 
@@ -149,13 +148,13 @@ end
 module type Value = sig
   type view_spec
   type clos
-  type loc
+  type addr
   type t
 
   val to_bool : t -> bool option
   val to_int : t -> int option
   val to_string : t -> string option
-  val to_loc : t -> loc option
+  val to_addr : t -> addr option
   val to_vs : t -> view_spec option
   val to_vss : t -> view_spec list option
   val to_clos : t -> clos option
@@ -185,11 +184,9 @@ module type S = sig
   include T
   module Path : Path with type t = path
   module Env : Env with type value = value and type t = env
-  module Loc : Loc with type t = loc
+  module Addr : Addr with type t = addr
   module Obj : Obj with type value = value and type t = obj
-
-  module Memory :
-    Memory with type obj = obj and type loc = loc and type t = memory
+  module Memory : Memory with type obj = obj and type addr = addr
 
   module St_store :
     St_store
@@ -213,7 +210,7 @@ module type S = sig
       with type view_spec = view_spec
        and type clos = clos
        and type t = value
-       and type loc = loc
+       and type addr = addr
 
   module Phase : Phase with type t = phase
   module Decision : Decision with type t = decision

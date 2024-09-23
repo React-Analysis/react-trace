@@ -1,5 +1,8 @@
 open! Core
 
+exception NotImplemented
+exception Unreachable
+
 type js_ast = (Loc.t, Loc.t) Flow_ast.Program.t
 
 let parse (filename : string) : js_ast * (Loc.t * Parse_error.t) list =
@@ -22,12 +25,8 @@ let fresh =
   let counter = ref 0 in
   fun () ->
     let n = !counter in
-    counter := n + 1;
+    incr counter;
     "@@" ^ Int.to_string n
-
-let get_exn ?(msg = "option is None") : 'a option -> 'a = function
-  | Some x -> x
-  | None -> failwith msg
 (* convert_pattern: converts js pattern declaration to a list of (name, expr) pairs.
    e. g.
    JS: let {x, y} = f(); ...
@@ -56,14 +55,14 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
                  | StringLiteral (_, { value; _ }) -> Const (String value)
                  | NumberLiteral (_, { value; _ }) ->
                      Const (Int (Int.of_float value))
-                 | BigIntLiteral _ -> failwith "TODO"
+                 | BigIntLiteral _ -> raise NotImplemented
                  | Identifier (_, { name; _ }) -> Const (String name)
-                 | Computed _ -> failwith "TODO"
+                 | Computed _ -> raise NotImplemented
                in
                convert_pattern pattern
                  ~base_expr:(Get { obj = Var base_name; idx = key })
-           | Property (_, { default = Some _; _ }) -> failwith "TODO"
-           | RestElement _ -> failwith "TODO")
+           | Property (_, { default = Some _; _ }) -> raise NotImplemented
+           | RestElement _ -> raise NotImplemented)
   | Array { elements; _ } ->
       let base_name = fresh () in
       (base_name, base_expr)
@@ -71,36 +70,36 @@ let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
            | Element (_, { argument; default = None }) ->
                convert_pattern argument
                  ~base_expr:(Get { obj = Var base_name; idx = Const (Int i) })
-           | Element (_, { default = Some _; _ }) -> failwith "TODO"
-           | RestElement _ -> failwith "TODO"
+           | Element (_, { default = Some _; _ }) -> raise NotImplemented
+           | RestElement _ -> raise NotImplemented
            | Hole _ -> [])
-  | Expression _ -> failwith "Unreachable"
+  | Expression _ -> raise Unreachable
 
 let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   let open Syntax.Expr in
   match bop with
-  | Equal -> failwith "TODO"
-  | NotEqual -> failwith "TODO"
+  | Equal -> raise NotImplemented
+  | NotEqual -> raise NotImplemented
   | StrictEqual -> Eq
   | StrictNotEqual -> Ne
   | LessThan -> Lt
   | LessThanEqual -> Le
   | GreaterThan -> Gt
   | GreaterThanEqual -> Ge
-  | LShift -> failwith "TODO"
-  | RShift -> failwith "TODO"
-  | RShift3 -> failwith "TODO"
+  | LShift -> raise NotImplemented
+  | RShift -> raise NotImplemented
+  | RShift3 -> raise NotImplemented
   | Plus -> Plus
   | Minus -> Minus
   | Mult -> Times
-  | Exp -> failwith "TODO"
-  | Div -> failwith "TODO"
-  | Mod -> failwith "TODO"
-  | BitOr -> failwith "TODO"
-  | Xor -> failwith "TODO"
-  | BitAnd -> failwith "TODO"
-  | In -> failwith "TODO"
-  | Instanceof -> failwith "TODO"
+  | Exp -> raise NotImplemented
+  | Div -> raise NotImplemented
+  | Mod -> raise NotImplemented
+  | BitOr -> raise NotImplemented
+  | Xor -> raise NotImplemented
+  | BitAnd -> raise NotImplemented
+  | In -> raise NotImplemented
+  | Instanceof -> raise NotImplemented
 
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.hook_free_t =
@@ -110,10 +109,10 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | Block { body; _ } ->
         let body = convert_stat_list body in
         Seq (body, tail)
-    | Break _ -> failwith "TODO"
-    | ClassDeclaration _ -> failwith "TODO"
-    | ComponentDeclaration _ -> failwith "TODO"
-    | Continue _ -> failwith "TODO"
+    | Break _ -> raise NotImplemented
+    | ClassDeclaration _ -> raise NotImplemented
+    | ComponentDeclaration _ -> raise NotImplemented
+    | Continue _ -> raise NotImplemented
     | Debugger _ -> tail
     | DeclareClass _ | DeclareComponent _ | DeclareEnum _
     | DeclareExportDeclaration _ | DeclareFunction _ | DeclareInterface _
@@ -121,9 +120,9 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
         (* flow statements starting with 'declare' *)
         tail
-    | DoWhile _ -> failwith "TODO"
+    | DoWhile _ -> raise NotImplemented
     | Empty _ -> tail
-    | EnumDeclaration _ -> failwith "TODO"
+    | EnumDeclaration _ -> raise NotImplemented
     | ExportDefaultDeclaration { declaration; _ } -> (
         (* TODO: handle export default declaration *)
         match declaration with
@@ -142,9 +141,9 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | Expression { expression; _ } ->
         let expr = convert_expr expression in
         Seq (expr, tail)
-    | For _ -> failwith "TODO"
-    | ForIn _ -> failwith "TODO"
-    | ForOf _ -> failwith "TODO"
+    | For _ -> raise NotImplemented
+    | ForIn _ -> raise NotImplemented
+    | ForOf _ -> raise NotImplemented
     | FunctionDeclaration f -> (
         let expr = convert_func f in
         match f.id with
@@ -159,15 +158,15 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
           | None -> Const Unit
         in
         Seq (Cond { pred = test; con = consequent; alt = alternate }, tail)
-    | ImportDeclaration _ -> failwith "TODO"
-    | InterfaceDeclaration _ -> failwith "TODO"
+    | ImportDeclaration _ -> raise NotImplemented
+    | InterfaceDeclaration _ -> raise NotImplemented
     | Labeled _ ->
         (* TODO: handle labeled statement *)
         tail
-    | Return _ -> failwith "TODO"
-    | Switch _ -> failwith "TODO"
-    | Throw _ -> failwith "TODO"
-    | Try _ -> failwith "TODO"
+    | Return _ -> raise NotImplemented
+    | Switch _ -> raise NotImplemented
+    | Throw _ -> raise NotImplemented
+    | Try _ -> raise NotImplemented
     | TypeAlias _ | OpaqueType _ ->
         (* flow type declaration *)
         tail
@@ -184,8 +183,8 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
         decls |> List.rev
         |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
                Let { id = name; bound = expr; body = tail })
-    | While _ -> failwith "TODO"
-    | With _ -> failwith "TODO"
+    | While _ -> raise NotImplemented
+    | With _ -> raise NotImplemented
   in
   List.rev body |> List.fold ~init:(Const Unit) ~f:convert_stat
 
@@ -196,7 +195,7 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
   let param =
     match params with
     | _, { params = [ (_, { argument; default = None }) ]; _ } -> argument
-    | _ -> failwith "TODO: non-single or optional parameter"
+    | _ -> raise NotImplemented (* non-single or optional parameter *)
   in
   let param_name, param_bindings =
     match param with
@@ -226,7 +225,7 @@ and convert_call (callee : Syntax.Expr.hook_free_t)
   let argument =
     match arguments with
     | [ Expression expr ] -> convert_expr expr
-    | _ -> failwith "TODO: non-single or spread arguments"
+    | _ -> raise NotImplemented (* non-single or spread arguments *)
   in
   App { fn = callee; arg = argument }
 
@@ -237,7 +236,7 @@ and convert_member (obj : Syntax.Expr.hook_free_t)
   match property with
   | PropertyIdentifier (_, { name; _ }) ->
       Get { obj; idx = Const (String name) }
-  | PropertyPrivateName _ -> failwith "TODO"
+  | PropertyPrivateName _ -> raise NotImplemented
   | PropertyExpression expr -> Get { obj; idx = convert_expr expr }
 
 and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
@@ -253,7 +252,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
             | Expression expr ->
                 let elem = convert_expr expr in
                 Set { obj = Var arr; idx = Const (Int i); value = elem }
-            | _ -> failwith "TODO")
+            | _ -> raise NotImplemented)
       in
       let asgns =
         asgns |> List.rev
@@ -264,7 +263,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | Function f | ArrowFunction f -> convert_func f
   | AsConstExpression { expression; _ } -> convert_expr expression
   | AsExpression { expression; _ } -> convert_expr expression
-  | Assignment _ -> failwith "TODO"
+  | Assignment _ -> raise NotImplemented
   | Binary { operator; left; right; _ } ->
       let left = convert_expr left in
       let right = convert_expr right in
@@ -272,26 +271,26 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | Call { callee; arguments; _ } ->
       let callee = convert_expr callee in
       convert_call callee arguments
-  | Class _ -> failwith "TODO"
+  | Class _ -> raise NotImplemented
   | Conditional { test; consequent; alternate; _ } ->
       let test = convert_expr test in
       let consequent = convert_expr consequent in
       let alternate = convert_expr alternate in
       Cond { pred = test; con = consequent; alt = alternate }
   | Identifier (_, { name; _ }) -> Var name
-  | Import _ -> failwith "TODO"
+  | Import _ -> raise NotImplemented
   | JSXElement { opening_element = _, { name; _ }; _ } ->
       (* TODO: handle opening and attributes and children *)
       let name =
         match name with
         | Identifier (_, { name; _ }) -> name
-        | _ -> failwith "TODO: non-identifier JSX element name"
+        | _ -> raise NotImplemented (* non-identifier JSX element name *)
       in
       View [ App { fn = Var name; arg = Const Unit } ]
   | JSXFragment _ ->
       (* TODO *)
       View [ Const Unit ]
-  | StringLiteral _ -> failwith "TODO"
+  | StringLiteral _ -> raise NotImplemented
   | BooleanLiteral { value; _ } -> Const (Bool value)
   | NullLiteral _ ->
       (* TODO: discriminate null and undefined *)
@@ -299,9 +298,9 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | NumberLiteral { value; _ } ->
       (* TODO: handle non-int value *)
       Const (Int (Int.of_float value))
-  | BigIntLiteral _ -> failwith "TODO"
-  | RegExpLiteral _ -> failwith "TODO"
-  | ModuleRefLiteral _ -> failwith "Not Supported"
+  | BigIntLiteral _ -> raise NotImplemented
+  | RegExpLiteral _ -> raise NotImplemented
+  | ModuleRefLiteral _ -> raise NotImplemented
   | Logical { operator; left; right; _ } -> (
       let left = convert_expr left in
       let right = convert_expr right in
@@ -342,8 +341,8 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | Member { _object; property; _ } ->
       let obj = convert_expr _object in
       convert_member obj property
-  | MetaProperty _ -> failwith "TODO"
-  | New _ -> failwith "TODO"
+  | MetaProperty _ -> raise NotImplemented
+  | New _ -> raise NotImplemented
   | Object { properties; _ } ->
       (* { a: x, b: y } --> (let obj = {} in obj.a := x; obj.b := y; obj) *)
       let obj = fresh () in
@@ -358,11 +357,11 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
                 idx = Const (Int (Int.of_float value));
                 value = prop_value;
               }
-        | BigIntLiteral _ -> failwith "TODO"
+        | BigIntLiteral _ -> raise NotImplemented
         | Identifier (_, { name; _ }) ->
             Set { obj = Var obj; idx = Const (String name); value = prop_value }
-        | PrivateName _ -> failwith "TODO"
-        | Computed _ -> failwith "TODO"
+        | PrivateName _ -> raise NotImplemented
+        | Computed _ -> raise NotImplemented
       in
       let asgns =
         List.map properties ~f:(function
@@ -372,9 +371,9 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
           | Property (_, Method { key; value = _, value; _ }) ->
               let value = convert_func value in
               convert_key_to_set value key
-          | Property (_, Get _) -> failwith "TODO"
-          | Property (_, Set _) -> failwith "TODO"
-          | SpreadProperty _ -> failwith "TODO")
+          | Property (_, Get _) -> raise NotImplemented
+          | Property (_, Set _) -> raise NotImplemented
+          | SpreadProperty _ -> raise NotImplemented)
       in
       let body =
         asgns |> List.rev
@@ -421,10 +420,10 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | Sequence { expressions; _ } ->
       List.fold expressions ~init:(Const Unit) ~f:(fun left right ->
           Seq (left, convert_expr right))
-  | Super _ -> failwith "TODO"
-  | TaggedTemplate _ -> failwith "TODO"
-  | TemplateLiteral _ -> failwith "TODO"
-  | This _ -> failwith "TODO"
+  | Super _ -> raise NotImplemented
+  | TaggedTemplate _ -> raise NotImplemented
+  | TemplateLiteral _ -> raise NotImplemented
+  | This _ -> raise NotImplemented
   | TypeCast { expression; _ } -> convert_expr expression
   | TSSatisfies { expression; _ } -> convert_expr expression
   | Unary { operator; argument; _ } -> (
@@ -434,13 +433,13 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
       | Minus -> Uop { op = Uminus; arg = argument }
       | Plus -> Uop { op = Uplus; arg = argument }
       | Not -> Uop { op = Not; arg = argument }
-      | BitNot -> failwith "TODO"
-      | Typeof -> failwith "TODO"
+      | BitNot -> raise NotImplemented
+      | Typeof -> raise NotImplemented
       | Void -> Seq (argument, Const Unit)
-      | Delete -> failwith "TODO"
-      | Await -> failwith "TODO")
-  | Update _ -> failwith "TODO"
-  | Yield _ -> failwith "TODO"
+      | Delete -> raise NotImplemented
+      | Await -> raise NotImplemented)
+  | Update _ -> raise NotImplemented
+  | Yield _ -> raise NotImplemented
 
 let convert (js_ast : js_ast) : Syntax.Prog.t =
   let _, { Flow_ast.Program.statements; _ } = js_ast in

@@ -37,12 +37,7 @@ module Expr = struct
     | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ t
     | Alloc : _ t
     | Get : { obj : hook_free t; idx : hook_free t } -> _ t
-    | Set : {
-        obj : hook_free t;
-        idx : hook_free t;
-        value : hook_free t;
-      }
-        -> _ t
+    | Set : { obj : hook_free t; idx : hook_free t; value : hook_free t } -> _ t
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
