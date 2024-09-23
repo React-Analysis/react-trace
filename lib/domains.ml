@@ -18,7 +18,7 @@ module type T = sig
     | Int of int
     | String of string
     | Addr of addr
-    | View_spec of view_spec list
+    | View_specs of view_spec list
     | Clos of clos
     | Set_clos of set_clos
     | Comp_clos of comp_clos

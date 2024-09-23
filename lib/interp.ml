@@ -299,7 +299,7 @@ let rec eval : type a. a Expr.t -> value =
   | Var id ->
       let env = perform Rd_env in
       Env.lookup_exn env ~id
-  | View es -> View_spec (List.map es ~f:(fun e -> eval e |> vs_of_value_exn))
+  | View es -> View_specs (List.map es ~f:(fun e -> eval e |> vs_of_value_exn))
   | Cond { pred; con; alt } ->
       let p = eval pred |> bool_of_value_exn in
       if p then eval con else eval alt

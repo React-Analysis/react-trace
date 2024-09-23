@@ -19,7 +19,7 @@ module M : Domains.S = struct
       | Int of int
       | String of string
       | Addr of addr
-      | View_spec of view_spec list
+      | View_specs of view_spec list
       | Clos of clos
       | Set_clos of set_clos
       | Comp_clos of comp_clos
@@ -190,7 +190,7 @@ module M : Domains.S = struct
       | Comp_spec t -> Some (Vs_comp t)
       | _ -> None
 
-    let to_vss = function View_spec vss -> Some vss | _ -> None
+    let to_vss = function View_specs vss -> Some vss | _ -> None
     let to_clos = function Clos c -> Some c | _ -> None
 
     let equal v1 v2 =
