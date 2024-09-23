@@ -11,7 +11,7 @@ module Label = Int
 module Expr = struct
   type hook_free = private Hook_free
   type hook_full = private Hook_full
-  type const = Unit | Bool of bool | Int of int
+  type const = Unit | Bool of bool | Int of int | String of string
   type uop = Not | Uplus | Uminus
   type bop = Eq | Lt | Gt | Ne | Le | Ge | And | Or | Plus | Minus | Times
 
@@ -35,6 +35,9 @@ module Expr = struct
     | Seq : 'a t * 'a t -> 'a t
     | Uop : { op : uop; arg : hook_free t } -> _ t
     | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ t
+    | Alloc : _ t
+    | Get : { obj : hook_free t; idx : hook_free t } -> _ t
+    | Set : { obj : hook_free t; idx : hook_free t; value : hook_free t } -> _ t
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
@@ -59,7 +62,10 @@ module Expr = struct
     | (Fn _ as e)
     | (App _ as e)
     | (Bop _ as e)
-    | (Uop _ as e) ->
+    | (Uop _ as e)
+    | (Alloc as e)
+    | (Get _ as e)
+    | (Set _ as e) ->
         Some e
 
   let hook_free_exn e = Option.value_exn (hook_free e)
@@ -83,7 +89,10 @@ module Expr = struct
     | (Stt _ as e)
     | (Eff _ as e)
     | (Uop _ as e)
-    | (Bop _ as e) ->
+    | (Bop _ as e)
+    | (Alloc as e)
+    | (Get _ as e)
+    | (Set _ as e) ->
         e
 
   let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
@@ -107,6 +116,7 @@ module Expr = struct
     | Const Unit -> a "()"
     | Const (Bool b) -> Bool.sexp_of_t b
     | Const (Int i) -> Int.sexp_of_t i
+    | Const (String s) -> String.sexp_of_t s
     | Var id -> Id.sexp_of_t id
     | View es -> l (a "View" :: List.map ~f:sexp_of_t es)
     | Cond { pred; con; alt } ->
@@ -130,6 +140,10 @@ module Expr = struct
     | Uop { op; arg } -> l [ a "Uop"; a (string_of_uop op); sexp_of_t arg ]
     | Bop { op; left; right } ->
         l [ a "Bop"; a (string_of_bop op); sexp_of_t left; sexp_of_t right ]
+    | Alloc -> a "Alloc"
+    | Get { obj; idx } -> l [ a "Get"; sexp_of_t obj; sexp_of_t idx ]
+    | Set { obj; idx; value } ->
+        l [ a "Set"; sexp_of_t obj; sexp_of_t idx; sexp_of_t value ]
 
   let sexp_of_hook_free_t = sexp_of_t
   let sexp_of_hook_full_t = sexp_of_t

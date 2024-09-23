@@ -17,6 +17,8 @@ and label_stts_expr label = function
 %token UNIT TRUE FALSE
 %token <int> INT
 %token <string> ID
+%token <string> STRING
+%token RECORD DOT ASSIGN
 %token VIEW
 %token FUN LET STT IN EFF
 %token IF THEN ELSE
@@ -30,6 +32,7 @@ and label_stts_expr label = function
 %nonassoc RARROW
 %nonassoc IN
 %right    SEMI
+%nonassoc ASSIGN
 %nonassoc EFF
 %nonassoc THEN /* below ELSE (if ... then ...) */
 %nonassoc ELSE /* (if ... then ... else ...) */
@@ -76,6 +79,10 @@ expr_:
     | op = uop; expr_ = expr_ %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr_ }) }
     | left = expr_; op = bop; right = expr_
       { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
+    | RECORD { Ex (Alloc) }
+    | obj = expr_; LBRACK; index = expr_; RBRACK { Ex (Get { obj = hook_free_exn obj; idx = hook_free_exn index }) }
+    | obj = expr_; LBRACK; index = expr_; RBRACK; ASSIGN; value = expr_
+      { Ex (Set { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value }) }
 %inline uop:
     | NOT { Not }
     | PLUS { Uplus }
@@ -100,6 +107,7 @@ atom:
     | TRUE { Ex (Const (Bool true)) }
     | FALSE { Ex (Const (Bool false)) }
     | n = INT { Ex (Const (Int n)) }
+    | s = STRING { Ex (Const (String s)) }
     | var = var { Ex (Var var) }
     | LPAREN; e = expr_; RPAREN { e }
 var:

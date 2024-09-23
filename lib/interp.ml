@@ -16,7 +16,13 @@ type _ Stdlib.Effect.t +=
   | Rd_env : Env.t t
   | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) t
 
-(* memory effects in eval/eval_mult *)
+(* memory effects *)
+type _ Stdlib.Effect.t +=
+  | Alloc_addr : obj -> Addr.t t
+  | Lookup_addr : Addr.t -> obj t
+  | Update_addr : Addr.t * obj -> unit t
+
+(* tree memory effects in eval/eval_mult *)
 type _ Stdlib.Effect.t +=
   | Lookup_st : Path.t * Label.t -> (value * Job_q.t) t
   | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit t
@@ -24,7 +30,7 @@ type _ Stdlib.Effect.t +=
   | Set_dec : Path.t * decision -> unit t
   | Enq_eff : Path.t * clos -> unit t
 
-(* memory effects in render *)
+(* tree memory effects in render *)
 type _ Stdlib.Effect.t +=
   | Alloc_pt : Path.t t
   | Lookup_ent : Path.t -> entry t
@@ -105,48 +111,79 @@ let mem_h =
     effc =
       (fun (type a) (eff : a t) ->
         match eff with
+        | Alloc_addr obj ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
+                Logger.mem mem `Alloc_addr;
+                let addr = Memory.alloc mem in
+                let mem = Memory.update mem ~addr ~obj in
+                continue k addr ~mem)
+        | Lookup_addr addr ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
+                Logger.mem mem (`Lookup_addr addr);
+                continue k (Memory.lookup mem ~addr) ~mem)
+        | Update_addr (addr, v) ->
+            Some
+              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
+                Logger.mem mem (`Update_addr (addr, v));
+                continue k () ~mem:(Memory.update mem ~addr ~obj:v))
+        | _ -> None);
+  }
+
+let treemem_h =
+  {
+    retc =
+      (fun v ~treemem ->
+        Logger.treemem treemem `Ret;
+        (v, treemem));
+    exnc = raise;
+    effc =
+      (fun (type a) (eff : a t) ->
+        match eff with
         (* in eval *)
         | Lookup_st (path, label) ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Lookup_st (path, label));
-                continue k (Tree_mem.lookup_st mem ~path ~label) ~mem)
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Lookup_st (path, label));
+                continue k (Tree_mem.lookup_st treemem ~path ~label) ~treemem)
         | Update_st (path, label, (v, q)) ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Update_st (path, label, (v, q)));
-                continue k () ~mem:(Tree_mem.update_st mem ~path ~label (v, q)))
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Update_st (path, label, (v, q)));
+                continue k ()
+                  ~treemem:(Tree_mem.update_st treemem ~path ~label (v, q)))
         | Get_dec path ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Get_dec path);
-                continue k (Tree_mem.get_dec mem ~path) ~mem)
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Get_dec path);
+                continue k (Tree_mem.get_dec treemem ~path) ~treemem)
         | Set_dec (path, dec) ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Set_dec (path, dec));
-                continue k () ~mem:(Tree_mem.set_dec mem ~path dec))
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Set_dec (path, dec));
+                continue k () ~treemem:(Tree_mem.set_dec treemem ~path dec))
         | Enq_eff (path, clos) ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Enq_eff (path, clos));
-                continue k () ~mem:(Tree_mem.enq_eff mem ~path clos))
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Enq_eff (path, clos));
+                continue k () ~treemem:(Tree_mem.enq_eff treemem ~path clos))
         (* in render *)
         | Alloc_pt ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem `Alloc_pt;
-                continue k (Tree_mem.alloc_pt mem) ~mem)
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem `Alloc_pt;
+                continue k (Tree_mem.alloc_pt treemem) ~treemem)
         | Lookup_ent path ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Lookup_ent path);
-                continue k (Tree_mem.lookup_ent mem ~path) ~mem)
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Lookup_ent path);
+                continue k (Tree_mem.lookup_ent treemem ~path) ~treemem)
         | Update_ent (path, ent) ->
             Some
-              (fun (k : (a, _) continuation) ~(mem : Tree_mem.t) ->
-                Logger.mem mem (`Update_ent (path, ent));
-                continue k () ~mem:(Tree_mem.update_ent mem ~path ent))
+              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
+                Logger.treemem treemem (`Update_ent (path, ent));
+                continue k () ~treemem:(Tree_mem.update_ent treemem ~path ent))
         | _ -> None);
   }
 
@@ -155,6 +192,8 @@ let value_exn exn v =
 
 let int_of_value_exn v = v |> Value.to_int |> value_exn Type_error
 let bool_of_value_exn v = v |> Value.to_bool |> value_exn Type_error
+let string_of_value_exn v = v |> Value.to_string |> value_exn Type_error
+let addr_of_value_exn v = v |> Value.to_addr |> value_exn Type_error
 let vs_of_value_exn v = v |> Value.to_vs |> value_exn Type_error
 let vss_of_value_exn v = v |> Value.to_vss |> value_exn Type_error
 let clos_of_value_exn v = v |> Value.to_clos |> value_exn Type_error
@@ -256,6 +295,7 @@ let rec eval : type a. a Expr.t -> value =
   | Const Unit -> Unit
   | Const (Bool b) -> Bool b
   | Const (Int i) -> Int i
+  | Const (String s) -> String s
   | Var id ->
       let env = perform Rd_env in
       Env.lookup_exn env ~id
@@ -361,6 +401,22 @@ let rec eval : type a. a Expr.t -> value =
       | Minus, Int i1, Int i2 -> Int (i1 - i2)
       | Times, Int i1, Int i2 -> Int (i1 * i2)
       | _, _, _ -> raise Type_error)
+  | Alloc ->
+      let addr = perform (Alloc_addr Obj.empty) in
+      Addr addr
+  | Get { obj; idx } ->
+      let addr = eval obj |> addr_of_value_exn in
+      let i = eval idx |> string_of_value_exn in
+      let obj = perform (Lookup_addr addr) in
+      Obj.lookup obj ~field:i
+  | Set { obj; idx; value } ->
+      let addr = eval obj |> addr_of_value_exn in
+      let i = eval idx |> string_of_value_exn in
+      let old_obj = perform (Lookup_addr addr) in
+      let value = eval value in
+      let new_obj = Obj.update old_obj ~field:i ~value in
+      perform (Update_addr (addr, new_obj));
+      Unit
 
 let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
  fun ?(re_render = 1) expr ->
@@ -548,7 +604,7 @@ let step_path (path : Path.t) : bool =
 
   has_updates
 
-type run_info = { steps : int; mem : Tree_mem.t }
+type run_info = { steps : int; mem : Memory.t; treemem : Tree_mem.t }
 
 let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     =
@@ -568,10 +624,8 @@ let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     loop ();
     !cnt
   in
-
-  let steps, mem =
-    match_with
-      (fun () -> try_with driver () (Report_box.log_h report))
-      () mem_h ~mem:Tree_mem.empty
-  in
-  { steps; mem }
+  let driver () = match_with driver () mem_h ~mem:Memory.empty in
+  let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
+  let driver () = try_with driver () (Report_box.log_h report) in
+  let (steps, mem), treemem = driver () in
+  { steps; mem; treemem }
