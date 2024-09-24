@@ -305,30 +305,12 @@ let rec eval : type a. a Expr.t -> value =
       if p then eval con else eval alt
   | Fn { param; body } -> Clos { param; body; env = perform Rd_env }
   | App { fn; arg } -> (
-      match eval fn with
-      | Clos { param; body; env } ->
-          let env = Env.extend env ~id:param ~value:(eval arg) in
-          perform (In_env env) eval body
-      | Comp_clos { comp; env } -> Comp_spec { comp; env; arg = eval arg }
-      | Set_clos { label; path } ->
-          (* Argument to the setter should be a setting thunk *)
-          let clos = eval arg |> clos_of_value_exn in
-
-          let self_pt = perform Rd_pt in
-          let phase = perform Rd_ph in
-
-          let dec =
-            if Path.(path = self_pt) && Phase.(phase <> P_effect) then Retry
-            else Update
-          in
-          perform (Set_dec (path, dec));
-
-          (*if Int.(path = self_pt) && Phase.(phase <> P_effect) then*)
-          (*  perform (Set_dec (path, Retry));*)
-          let v, q = perform (Lookup_st (path, label)) in
-          perform (Update_st (path, label, (v, Job_q.enqueue q clos)));
-
-          Unit
+      let fn = eval fn in
+      let arg = eval arg in
+      match fn with
+      | Clos c -> eval_app_clos c arg
+      | Comp_clos c -> eval_app_comp_clos c arg
+      | Set_clos c -> eval_app_set_clos c arg
       | _ -> raise Type_error)
   | Let { id; bound; body } ->
       let value = eval bound in
@@ -337,32 +319,8 @@ let rec eval : type a. a Expr.t -> value =
   | Stt { label; stt; set; init; body } -> (
       let path = perform Rd_pt in
       match perform Rd_ph with
-      | P_init ->
-          let v = eval init in
-          let env =
-            perform Rd_env
-            |> Env.extend ~id:stt ~value:v
-            |> Env.extend ~id:set ~value:(Set_clos { label; path })
-          in
-          perform (Update_st (path, label, (v, Job_q.empty)));
-          perform (In_env env) eval body
-      | P_update | P_retry ->
-          let v_old, q = perform (Lookup_st (path, label)) in
-          (* Run the setting thunks in the set queue *)
-          let v =
-            Job_q.fold q ~init:v_old ~f:(fun value { param; body; env } ->
-                let env = Env.extend env ~id:param ~value in
-                perform (In_env env) eval body)
-          in
-
-          let env =
-            perform Rd_env
-            |> Env.extend ~id:stt ~value:v
-            |> Env.extend ~id:set ~value:(Set_clos { label; path })
-          in
-          if Value.(v_old <> v) then perform (Set_dec (path, Update));
-          perform (Update_st (path, label, (v, Job_q.empty)));
-          perform (In_env env) eval body
+      | P_init -> eval_stt_init ~label ~stt ~set ~init ~body ~path
+      | P_update | P_retry -> eval_stt_update_retry ~label ~stt ~set ~body ~path
       | P_effect -> raise Invalid_phase)
   | Eff e ->
       let path = perform Rd_pt
@@ -417,6 +375,59 @@ let rec eval : type a. a Expr.t -> value =
       let new_obj = Obj.update old_obj ~field:i ~value in
       perform (Update_addr (addr, new_obj));
       Unit
+
+and eval_app_clos { param; body; env } arg =
+  let env = Env.extend env ~id:param ~value:arg in
+  perform (In_env env) eval body
+
+and eval_app_comp_clos { comp; env } arg = Comp_spec { comp; env; arg }
+
+and eval_app_set_clos { label; path } arg =
+  (* Argument to the setter should be a setting thunk *)
+  let clos = clos_of_value_exn arg in
+
+  let self_pt = perform Rd_pt in
+  let phase = perform Rd_ph in
+
+  let dec =
+    if Path.(path = self_pt) && Phase.(phase <> P_effect) then Retry else Update
+  in
+  perform (Set_dec (path, dec));
+
+  (*if Int.(path = self_pt) && Phase.(phase <> P_effect) then*)
+  (*  perform (Set_dec (path, Retry));*)
+  let v, q = perform (Lookup_st (path, label)) in
+  perform (Update_st (path, label, (v, Job_q.enqueue q clos)));
+
+  Unit
+
+and eval_stt_init ~label ~stt ~set ~init ~body ~path =
+  let v = eval init in
+  let env =
+    perform Rd_env
+    |> Env.extend ~id:stt ~value:v
+    |> Env.extend ~id:set ~value:(Set_clos { label; path })
+  in
+  perform (Update_st (path, label, (v, Job_q.empty)));
+  perform (In_env env) eval body
+
+and eval_stt_update_retry ~label ~stt ~set ~body ~path =
+  let v_old, q = perform (Lookup_st (path, label)) in
+  (* Run the setting thunks in the set queue *)
+  let v =
+    Job_q.fold q ~init:v_old ~f:(fun value { param; body; env } ->
+        let env = Env.extend env ~id:param ~value in
+        perform (In_env env) eval body)
+  in
+
+  let env =
+    perform Rd_env
+    |> Env.extend ~id:stt ~value:v
+    |> Env.extend ~id:set ~value:(Set_clos { label; path })
+  in
+  if Value.(v_old <> v) then perform (Set_dec (path, Update));
+  perform (Update_st (path, label, (v, Job_q.empty)));
+  perform (In_env env) eval body
 
 let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
  fun ?(re_render = 1) expr ->
