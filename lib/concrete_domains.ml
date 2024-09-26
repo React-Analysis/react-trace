@@ -246,13 +246,6 @@ module M : Domains.S = struct
 
   include T
 
-  module Value = struct
-    type nonrec view_spec = view_spec
-    type nonrec clos = clos
-    type nonrec addr = addr
-    type t = value
-  end
-
   module Phase = struct
     type t = phase = P_init | P_update | P_retry | P_effect [@@deriving equal]
 
