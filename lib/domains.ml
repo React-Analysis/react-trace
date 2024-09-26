@@ -11,22 +11,9 @@ module type T = sig
   type clos = { param : Id.t; body : Expr.hook_free_t; env : env }
   type set_clos = { label : Label.t; path : path }
   type comp_clos = { comp : Prog.comp; env : env }
-
-  type value =
-    | Unit
-    | Bool of bool
-    | Int of int
-    | String of string
-    | Addr of addr
-    | View_specs of view_spec list
-    | Clos of clos
-    | Set_clos of set_clos
-    | Comp_clos of comp_clos
-    | Comp_spec of comp_spec
-
-  and comp_spec = { comp : Prog.comp; env : env; arg : value }
-  and view_spec = Vs_null | Vs_int of int | Vs_comp of comp_spec
-
+  type value
+  type comp_spec = { comp : Prog.comp; env : env; arg : value }
+  type view_spec = Vs_null | Vs_int of int | Vs_comp of comp_spec
   type phase = P_init | P_update | P_retry | P_effect
   type decision = Idle | Retry | Update
 
@@ -42,6 +29,41 @@ module type T = sig
   type tree = Leaf_null | Leaf_int of int | Path of path
   type entry = { part_view : part_view; children : tree Snoc_list.t }
 
+  (* constructors *)
+  val unit : unit -> value
+  val bool : bool -> value
+  val int : int -> value
+  val string : string -> value
+  val addr : addr -> value
+  val view_specs : view_spec list -> value
+  val clos : clos -> value
+  val set_clos : set_clos -> value
+  val comp_clos : comp_clos -> value
+  val comp_spec : comp_spec -> value
+
+  (* coercions *)
+  val to_unit : value -> unit option
+  val to_bool : value -> bool option
+  val to_int : value -> int option
+  val to_string : value -> string option
+  val to_addr : value -> addr option
+  val to_view_spec : value -> view_spec option
+  val to_view_specs : value -> view_spec list option
+  val to_clos : value -> clos option
+  val to_comp_clos : value -> comp_clos option
+  val to_set_clos : value -> set_clos option
+
+  (* comparison *)
+  (* TODO: may not be comparable, so should be bool option *)
+  val equal : value -> value -> bool
+  val ( = ) : value -> value -> bool
+  val ( <> ) : value -> value -> bool
+
+  (* primitive operations *)
+  val uop : Expr.uop -> value -> value option
+  val bop : Expr.bop -> value -> value -> value option
+
+  (* sexp_of *)
   val sexp_of_clos : clos -> Sexp.t
   val sexp_of_set_clos : set_clos -> Sexp.t
   val sexp_of_comp_clos : comp_clos -> Sexp.t
@@ -146,24 +168,6 @@ module type Tree_mem = sig
   val sexp_of_t : t -> Sexp.t
 end
 
-module type Value = sig
-  type view_spec
-  type clos
-  type addr
-  type t
-
-  val to_bool : t -> bool option
-  val to_int : t -> int option
-  val to_string : t -> string option
-  val to_addr : t -> addr option
-  val to_vs : t -> view_spec option
-  val to_vss : t -> view_spec list option
-  val to_clos : t -> clos option
-  val equal : t -> t -> bool
-  val ( = ) : t -> t -> bool
-  val ( <> ) : t -> t -> bool
-end
-
 module type Phase = sig
   type t
 
@@ -205,13 +209,6 @@ module type S = sig
        and type decision = decision
        and type clos = clos
        and type entry = entry
-
-  module Value :
-    Value
-      with type view_spec = view_spec
-       and type clos = clos
-       and type t = value
-       and type addr = addr
 
   module Phase : Phase with type t = phase
   module Decision : Decision with type t = decision

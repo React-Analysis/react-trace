@@ -190,13 +190,13 @@ let treemem_h =
 let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
 
-let int_of_value_exn v = v |> Value.to_int |> value_exn Type_error
-let bool_of_value_exn v = v |> Value.to_bool |> value_exn Type_error
-let string_of_value_exn v = v |> Value.to_string |> value_exn Type_error
-let addr_of_value_exn v = v |> Value.to_addr |> value_exn Type_error
-let vs_of_value_exn v = v |> Value.to_vs |> value_exn Type_error
-let vss_of_value_exn v = v |> Value.to_vss |> value_exn Type_error
-let clos_of_value_exn v = v |> Value.to_clos |> value_exn Type_error
+let int_of_value_exn v = v |> to_int |> value_exn Type_error
+let bool_of_value_exn v = v |> to_bool |> value_exn Type_error
+let string_of_value_exn v = v |> to_string |> value_exn Type_error
+let addr_of_value_exn v = v |> to_addr |> value_exn Type_error
+let vs_of_value_exn v = v |> to_view_spec |> value_exn Type_error
+let vss_of_value_exn v = v |> to_view_specs |> value_exn Type_error
+let clos_of_value_exn v = v |> to_clos |> value_exn Type_error
 
 module Env = struct
   include Env
@@ -292,26 +292,30 @@ let rec eval : type a. a Expr.t -> value =
  fun expr ->
   Logger.eval expr;
   match expr with
-  | Const Unit -> Unit
-  | Const (Bool b) -> Bool b
-  | Const (Int i) -> Int i
-  | Const (String s) -> String s
+  | Const Unit -> unit ()
+  | Const (Bool b) -> bool b
+  | Const (Int i) -> int i
+  | Const (String s) -> string s
   | Var id ->
       let env = perform Rd_env in
       Env.lookup_exn env ~id
-  | View es -> View_specs (List.map es ~f:(fun e -> eval e |> vs_of_value_exn))
+  | View es -> view_specs (List.map es ~f:(fun e -> eval e |> vs_of_value_exn))
   | Cond { pred; con; alt } ->
       let p = eval pred |> bool_of_value_exn in
       if p then eval con else eval alt
-  | Fn { param; body } -> Clos { param; body; env = perform Rd_env }
+  | Fn { param; body } -> clos { param; body; env = perform Rd_env }
   | App { fn; arg } -> (
       let fn = eval fn in
       let arg = eval arg in
-      match fn with
-      | Clos c -> eval_app_clos c arg
-      | Comp_clos c -> eval_app_comp_clos c arg
-      | Set_clos c -> eval_app_set_clos c arg
-      | _ -> raise Type_error)
+      match to_clos fn with
+      | Some c -> eval_app_clos c arg
+      | None -> (
+          match to_comp_clos fn with
+          | Some c -> eval_app_comp_clos c arg
+          | None -> (
+              match to_set_clos fn with
+              | Some c -> eval_app_set_clos c arg
+              | None -> raise Type_error)))
   | Let { id; bound; body } ->
       let value = eval bound in
       let env = Env.extend (perform Rd_env) ~id ~value in
@@ -328,40 +332,20 @@ let rec eval : type a. a Expr.t -> value =
       and env = perform Rd_env in
       (match phase with P_effect -> raise Invalid_phase | _ -> ());
       perform (Enq_eff (path, { param = Id.unit; body = e; env }));
-      Unit
+      unit ()
   | Seq (e1, e2) ->
       eval e1 |> ignore;
       eval e2
   | Uop { op; arg } -> (
       let v = eval arg in
-      match (op, v) with
-      | Not, Bool b -> Bool (not b)
-      | Uplus, Int i -> Int i
-      | Uminus, Int i -> Int ~-i
-      | _, _ -> raise Type_error)
+      match uop op v with Some v -> v | None -> raise Type_error)
   | Bop { op; left; right } -> (
       let v1 = eval left in
       let v2 = eval right in
-      match (op, v1, v2) with
-      | Eq, Unit, Unit -> Bool true
-      | Eq, Bool b1, Bool b2 -> Bool Bool.(b1 = b2)
-      | Eq, Int i1, Int i2 -> Bool (i1 = i2)
-      | Lt, Int i1, Int i2 -> Bool (i1 < i2)
-      | Gt, Int i1, Int i2 -> Bool (i1 > i2)
-      | Le, Int i1, Int i2 -> Bool (i1 <= i2)
-      | Ge, Int i1, Int i2 -> Bool (i1 >= i2)
-      | Ne, Unit, Unit -> Bool false
-      | Ne, Bool b1, Bool b2 -> Bool Bool.(b1 <> b2)
-      | Ne, Int i1, Int i2 -> Bool (i1 <> i2)
-      | And, Bool b1, Bool b2 -> Bool (b1 && b2)
-      | Or, Bool b1, Bool b2 -> Bool (b1 || b2)
-      | Plus, Int i1, Int i2 -> Int (i1 + i2)
-      | Minus, Int i1, Int i2 -> Int (i1 - i2)
-      | Times, Int i1, Int i2 -> Int (i1 * i2)
-      | _, _, _ -> raise Type_error)
+      match bop op v1 v2 with Some v -> v | None -> raise Type_error)
   | Alloc ->
-      let addr = perform (Alloc_addr Obj.empty) in
-      Addr addr
+      let a = perform (Alloc_addr Obj.empty) in
+      addr a
   | Get { obj; idx } ->
       let addr = eval obj |> addr_of_value_exn in
       let i = eval idx |> string_of_value_exn in
@@ -374,13 +358,13 @@ let rec eval : type a. a Expr.t -> value =
       let value = eval value in
       let new_obj = Obj.update old_obj ~field:i ~value in
       perform (Update_addr (addr, new_obj));
-      Unit
+      unit ()
 
 and eval_app_clos { param; body; env } arg =
   let env = Env.extend env ~id:param ~value:arg in
   perform (In_env env) eval body
 
-and eval_app_comp_clos { comp; env } arg = Comp_spec { comp; env; arg }
+and eval_app_comp_clos { comp; env } arg = comp_spec { comp; env; arg }
 
 and eval_app_set_clos { label; path } arg =
   (* Argument to the setter should be a setting thunk *)
@@ -399,14 +383,14 @@ and eval_app_set_clos { label; path } arg =
   let v, q = perform (Lookup_st (path, label)) in
   perform (Update_st (path, label, (v, Job_q.enqueue q clos)));
 
-  Unit
+  unit ()
 
 and eval_stt_init ~label ~stt ~set ~init ~body ~path =
   let v = eval init in
   let env =
     perform Rd_env
     |> Env.extend ~id:stt ~value:v
-    |> Env.extend ~id:set ~value:(Set_clos { label; path })
+    |> Env.extend ~id:set ~value:(set_clos { label; path })
   in
   perform (Update_st (path, label, (v, Job_q.empty)));
   perform (In_env env) eval body
@@ -423,9 +407,9 @@ and eval_stt_update_retry ~label ~stt ~set ~body ~path =
   let env =
     perform Rd_env
     |> Env.extend ~id:stt ~value:v
-    |> Env.extend ~id:set ~value:(Set_clos { label; path })
+    |> Env.extend ~id:set ~value:(set_clos { label; path })
   in
-  if Value.(v_old <> v) then perform (Set_dec (path, Update));
+  if v_old <> v then perform (Set_dec (path, Update));
   perform (Update_st (path, label, (v, Job_q.empty)));
   perform (In_env env) eval body
 
@@ -544,14 +528,14 @@ and reconcile1 (old_tree : tree option) (vs : view_spec) : bool * tree =
   Logger.reconcile1 old_tree vs;
   match (old_tree, vs) with
   | Some (Leaf_null as t), Vs_null -> (false, t)
-  | Some (Leaf_int i as t), Vs_int j when i = j -> (false, t)
+  | Some (Leaf_int i as t), Vs_int j when Int.(i = j) -> (false, t)
   | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) -> (
       let { part_view; _ } = perform (Lookup_ent pt) in
       match part_view with
       | Root -> assert false
       | Node { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ } ->
           if Id.(name = name') then
-            (update1 t (if Value.(arg = arg') then None else Some arg), t)
+            (update1 t (if arg = arg' then None else Some arg), t)
           else (true, render1 vs))
   | _, vs -> (true, render1 vs)
 
@@ -589,7 +573,7 @@ let rec eval_top (prog : Prog.t) : view_spec list =
   | Expr e -> eval e |> vss_of_value_exn
   | Comp (comp, p) ->
       let env = perform Rd_env in
-      let env = Env.extend env ~id:comp.name ~value:(Comp_clos { comp; env }) in
+      let env = Env.extend env ~id:comp.name ~value:(comp_clos { comp; env }) in
       perform (In_env env) eval_top p
 
 let step_prog (prog : Prog.t) : Path.t =

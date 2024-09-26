@@ -50,6 +50,76 @@ module M : Domains.S = struct
 
     type entry = { part_view : part_view; children : tree Snoc_list.t }
     [@@deriving sexp_of]
+
+    (* constructors *)
+    let unit () = Unit
+    let bool b = Bool b
+    let int i = Int i
+    let string s = String s
+    let addr a = Addr a
+    let view_specs vss = View_specs vss
+    let clos c = Clos c
+    let set_clos sc = Set_clos sc
+    let comp_clos cc = Comp_clos cc
+    let comp_spec cs = Comp_spec cs
+
+    (* coercions *)
+    let to_unit = function Unit -> Some () | _ -> None
+    let to_bool = function Bool b -> Some b | _ -> None
+    let to_int = function Int i -> Some i | _ -> None
+    let to_string = function String s -> Some s | _ -> None
+    let to_addr = function Addr l -> Some l | _ -> None
+
+    let to_view_spec = function
+      | Unit -> Some Vs_null
+      | Int i -> Some (Vs_int i)
+      | Comp_spec t -> Some (Vs_comp t)
+      | _ -> None
+
+    let to_view_specs = function View_specs vss -> Some vss | _ -> None
+    let to_clos = function Clos c -> Some c | _ -> None
+    let to_comp_clos = function Comp_clos c -> Some c | _ -> None
+    let to_set_clos = function Set_clos c -> Some c | _ -> None
+
+    (* comparison *)
+    (* TODO: may not be comparable, so should be bool option *)
+    let equal v1 v2 =
+      match (v1, v2) with
+      | Unit, Unit -> true
+      | Bool b1, Bool b2 -> Bool.(b1 = b2)
+      | Int i1, Int i2 -> i1 = i2
+      | Addr l1, Addr l2 -> Addr.(l1 = l2)
+      | _, _ -> false
+
+    let ( = ) = equal
+    let ( <> ) v1 v2 = not (v1 = v2)
+
+    (* primitive operations *)
+    let uop op v =
+      match (op, v) with
+      | Expr.Not, Bool b -> Some (Bool (not b))
+      | Uplus, Int i -> Some (Int i)
+      | Uminus, Int i -> Some (Int ~-i)
+      | _, _ -> None
+
+    let bop op v1 v2 =
+      match (op, v1, v2) with
+      | Expr.Eq, Unit, Unit -> Some (Bool true)
+      | Eq, Bool b1, Bool b2 -> Some (Bool Bool.(b1 = b2))
+      | Eq, Int i1, Int i2 -> Some (Bool Int.(i1 = i2))
+      | Lt, Int i1, Int i2 -> Some (Bool Int.(i1 < i2))
+      | Gt, Int i1, Int i2 -> Some (Bool Int.(i1 > i2))
+      | Le, Int i1, Int i2 -> Some (Bool Int.(i1 <= i2))
+      | Ge, Int i1, Int i2 -> Some (Bool Int.(i1 >= i2))
+      | Ne, Unit, Unit -> Some (Bool false)
+      | Ne, Bool b1, Bool b2 -> Some (Bool Bool.(b1 <> b2))
+      | Ne, Int i1, Int i2 -> Some (Bool Int.(i1 <> i2))
+      | And, Bool b1, Bool b2 -> Some (Bool (b1 && b2))
+      | Or, Bool b1, Bool b2 -> Some (Bool (b1 || b2))
+      | Plus, Int i1, Int i2 -> Some (Int (i1 + i2))
+      | Minus, Int i1, Int i2 -> Some (Int (i1 - i2))
+      | Times, Int i1, Int i2 -> Some (Int (i1 * i2))
+      | _, _, _ -> None
   end
 
   and Path : (Domains.Path with type t = T.path) = Int
@@ -70,7 +140,10 @@ module M : Domains.S = struct
     type t = value Id.Map.t [@@deriving sexp_of]
 
     let empty = Id.Map.empty
-    let lookup obj ~field = Map.find obj field |> Option.value ~default:T.Unit
+
+    let lookup obj ~field =
+      Map.find obj field |> Option.value ~default:(T.unit ())
+
     let update obj ~field ~value = Map.set obj ~key:field ~data:value
   end
 
@@ -178,31 +251,6 @@ module M : Domains.S = struct
     type nonrec clos = clos
     type nonrec addr = addr
     type t = value
-
-    let to_bool = function Bool b -> Some b | _ -> None
-    let to_int = function Int i -> Some i | _ -> None
-    let to_string = function String s -> Some s | _ -> None
-    let to_addr = function Addr l -> Some l | _ -> None
-
-    let to_vs = function
-      | Unit -> Some Vs_null
-      | Int i -> Some (Vs_int i)
-      | Comp_spec t -> Some (Vs_comp t)
-      | _ -> None
-
-    let to_vss = function View_specs vss -> Some vss | _ -> None
-    let to_clos = function Clos c -> Some c | _ -> None
-
-    let equal v1 v2 =
-      match (v1, v2) with
-      | Unit, Unit -> true
-      | Bool b1, Bool b2 -> Bool.(b1 = b2)
-      | Int i1, Int i2 -> i1 = i2
-      | Addr l1, Addr l2 -> Addr.(l1 = l2)
-      | _, _ -> false
-
-    let ( = ) = equal
-    let ( <> ) v1 v2 = not (v1 = v2)
   end
 
   module Phase = struct
