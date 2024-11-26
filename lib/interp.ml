@@ -624,8 +624,8 @@ let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     loop ();
     !cnt
   in
-  let driver () = match_with driver () mem_h ~mem:Memory.empty in
-  let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
   let driver () = try_with driver () (Report_box.log_h report) in
-  let (steps, mem), treemem = driver () in
+  let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
+  let driver () = match_with driver () mem_h ~mem:Memory.empty in
+  let (steps, treemem), mem = driver () in
   { steps; mem; treemem }
