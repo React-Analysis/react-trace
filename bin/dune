@@ -1,6 +1,7 @@
 (executable
  (public_name react_trace)
  (name main)
+ (modes exe js)
  (preprocess
   (pps ppx_jane))
  (libraries react_trace base logs logs.fmt fmt fmt.tty))
