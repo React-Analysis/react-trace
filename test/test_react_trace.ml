@@ -655,7 +655,8 @@ view [C ()]
     Interp.(match_with (run ~fuel) prog re_render_limit_h ~re_render_limit:25)
     |> ignore
   in
-  Alcotest.(check_raises) "retry indefintely" Interp.Too_many_re_renders run
+  Alcotest.(check_raises)
+    "retry indefintely" Interp_effects.Too_many_re_renders run
 
 let set_in_body_guarded () =
   let prog =

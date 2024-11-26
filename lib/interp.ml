@@ -3,43 +3,7 @@ open Stdlib.Effect
 open Stdlib.Effect.Deep
 open Syntax
 open Concrete_domains
-
-exception Unbound_var of string
-exception Type_error
-exception Invalid_phase
-
-(* path and phase effects *)
-type _ Stdlib.Effect.t += Rd_pt : Path.t t | Rd_ph : phase t
-
-(* environmental effects *)
-type _ Stdlib.Effect.t +=
-  | Rd_env : Env.t t
-  | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) t
-
-(* memory effects *)
-type _ Stdlib.Effect.t +=
-  | Alloc_addr : obj -> Addr.t t
-  | Lookup_addr : Addr.t -> obj t
-  | Update_addr : Addr.t * obj -> unit t
-
-(* tree memory effects in eval/eval_mult *)
-type _ Stdlib.Effect.t +=
-  | Lookup_st : Path.t * Label.t -> (value * Job_q.t) t
-  | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit t
-  | Get_dec : Path.t -> decision t
-  | Set_dec : Path.t * decision -> unit t
-  | Enq_eff : Path.t * clos -> unit t
-
-(* tree memory effects in render *)
-type _ Stdlib.Effect.t +=
-  | Alloc_pt : Path.t t
-  | Lookup_ent : Path.t -> entry t
-  | Update_ent : Path.t * entry -> unit t
-
-(* For testing nontermination *)
-type _ Stdlib.Effect.t += Re_render_limit : int t
-
-exception Too_many_re_renders
+open Interp_effects
 
 let re_render_limit_h : 'a. ('a, re_render_limit:int -> 'a) handler =
   {
@@ -204,7 +168,11 @@ module Env = struct
   let lookup_exn env ~id = lookup env ~id |> value_exn (Unbound_var id)
 end
 
-module Report_box = struct
+module Report_box : sig
+  type _ Stdlib.Effect.t += Log : { msg : string; path : Path.t } -> unit t
+
+  val log_h : bool -> _ effect_handler
+end = struct
   module B = PrintBox
 
   (* For reporting *)
@@ -624,6 +592,7 @@ let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     loop ();
     !cnt
   in
+  (* TODO: Integrate Report_box with (WIP) Recorder API *)
   let driver () = try_with driver () (Report_box.log_h report) in
   let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
   let driver () = match_with driver () mem_h ~mem:Memory.empty in
