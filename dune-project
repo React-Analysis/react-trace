@@ -27,7 +27,8 @@
   (ocaml-base-compiler
    (= 5.2.0))
   core
-  js_of_ocaml-compiler
+  js_of_ocaml
+  js_of_ocaml-ppx
   flow_parser
   fmt
   logs

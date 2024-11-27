@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (modes js)
+ (preprocess
+  (pps ppx_jane js_of_ocaml-ppx))
+ (libraries react_trace base logs logs.fmt fmt fmt.tty js_of_ocaml))

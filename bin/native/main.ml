@@ -74,7 +74,9 @@ let () =
       Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)
     else
       let { Interp.steps; _ } =
-        Interp.run ?fuel:!opt_fuel ~report:!opt_report prog
+        Interp.run ?fuel:!opt_fuel ~report:!opt_report
+          ~recorder:(module Default_recorder)
+          prog
       in
       printf "\nSteps: %d\n" steps;
       Stdlib.exit (if Logs.err_count () > 0 then 1 else 0))

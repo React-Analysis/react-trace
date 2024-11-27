@@ -4,6 +4,12 @@ open React_trace
 
 let fuel = 100
 
+module Interp = struct
+  include Interp
+
+  let run = Interp.run ~recorder:(module Default_recorder)
+end
+
 let parse_prog s =
   let lexbuf = Lexing.from_string s in
   Parser.prog Lexer.read lexbuf

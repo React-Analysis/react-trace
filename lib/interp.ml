@@ -572,10 +572,16 @@ let step_path (path : Path.t) : bool =
 
   has_updates
 
-type run_info = { steps : int; mem : Memory.t; treemem : Tree_mem.t }
+type 'recording run_info = {
+  steps : int;
+  mem : Memory.t;
+  treemem : Tree_mem.t;
+  recording : 'recording;
+}
 
-let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
-    =
+let run (type recording) ?(fuel : int option) ?(report : bool = false)
+    ~(recorder : (module Recorder_intf.Intf with type recording = recording))
+    (prog : Prog.t) : recording run_info =
   Logger.run prog;
 
   let driver () =
@@ -592,9 +598,15 @@ let run ?(fuel : int option) ?(report : bool = false) (prog : Prog.t) : run_info
     loop ();
     !cnt
   in
+
+  let driver () =
+    let open (val recorder) in
+    match_with driver () event_h ~recording:emp_recording
+  in
   (* TODO: Integrate Report_box with (WIP) Recorder API *)
   let driver () = try_with driver () (Report_box.log_h report) in
+
   let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
   let driver () = match_with driver () mem_h ~mem:Memory.empty in
-  let (steps, treemem), mem = driver () in
-  { steps; mem; treemem }
+  let ((steps, recording), treemem), mem = driver () in
+  { steps; mem; treemem; recording }
