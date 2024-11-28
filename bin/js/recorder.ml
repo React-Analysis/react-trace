@@ -1,6 +1,7 @@
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open React_trace
+open Interp_effects
 include Recorder_intf
 
 (* TODO: Replace the dummy string with an actual recording type *)
@@ -15,25 +16,25 @@ let event_h =
     effc =
       (fun (type a) (eff : a t) ->
         match eff with
-        | Evt_update_st (path, label, (v, q)) ->
+        | Update_st (path, label, (v, q)) ->
             Some
               (fun (k : (a, _) continuation) ~(recording : recording) ->
-                ignore (path, label, v, q);
+                let () = perform (Update_st (path, label, (v, q))) in
                 continue k () ~recording)
-        | Evt_set_dec (path, dec) ->
+        | Set_dec (path, dec) ->
             Some
               (fun (k : (a, _) continuation) ~(recording : recording) ->
-                ignore (path, dec);
+                let () = perform (Set_dec (path, dec)) in
                 continue k () ~recording)
-        | Evt_enq_eff (path, clos) ->
+        | Enq_eff (path, clos) ->
             Some
               (fun (k : (a, _) continuation) ~(recording : recording) ->
-                ignore (path, clos);
+                let () = perform (Enq_eff (path, clos)) in
                 continue k () ~recording)
-        | Evt_alloc_pt path ->
+        | Alloc_pt ->
             Some
               (fun (k : (a, _) continuation) ~(recording : recording) ->
-                ignore path;
-                continue k () ~recording)
+                let path = perform Alloc_pt in
+                continue k path ~recording)
         | _ -> None);
   }
