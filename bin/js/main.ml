@@ -30,7 +30,7 @@ let () =
           let Interp.{ recording; _ } =
             Interp.run
               ?fuel:(if fuel < 1 then None else Some fuel)
-              ~recorder:(module Recorder)
+              ~recorder:(module String_recorder)
               prog
           in
           if Logs.err_count () > 0 then Error "error" else Ok recording)
