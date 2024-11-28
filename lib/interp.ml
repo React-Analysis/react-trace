@@ -259,7 +259,7 @@ end
 let rec eval : type a. a Expr.t -> value =
  fun expr ->
   Logger.eval expr;
-  match expr with
+  match expr.desc with
   | Const Unit -> Unit
   | Const (Bool b) -> Bool b
   | Const (Int i) -> Int i

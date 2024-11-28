@@ -3,13 +3,20 @@ open Syntax
 open Prog
 open Expr
 
+let make_loc (startpos, endpos) =
+  Location.{ loc_start = startpos; loc_end = endpos; loc_ghost = false }
+
+let mkexp ~loc d = Expr.mk ~loc:(make_loc loc) d
+
 let rec label_stts_prog = function
   | Expr _ as e -> e
   | Comp (c, tl) ->
       Comp ({ c with body = label_stts_expr 0 c.body }, label_stts_prog tl)
 
 and label_stts_expr label = function
-  | Stt s -> Stt { s with label; body = label_stts_expr (label + 1) s.body }
+  | { desc = Stt s; loc } ->
+      Expr.mk ~loc
+        (Stt { s with label; body = label_stts_expr (label + 1) s.body })
   | e -> e
 %}
 
@@ -45,6 +52,9 @@ and label_stts_expr label = function
 %start <Prog.t> prog
 %start <some_expr> expr
 %%
+
+%inline mkexp(symb): symb { Ex (mkexp ~loc:$sloc $1) }
+
 prog:
     | prog = comp_lst; EOF { label_stts_prog prog }
 expr:
@@ -57,30 +67,45 @@ comp_expr:
     | LET; name = var; param = var; EQ; body = expr_ { { name; param; body = hook_full body } }
 expr_:
     | apply { $1 }
-    | FUN; param = var; RARROW; body = expr_ { Ex (Fn { param; body = hook_free_exn body }) }
+    | mkexp(FUN; param = var; RARROW; body = expr_
+      { Fn { param; body = hook_free_exn body } })
+      { $1 }
     | LET; id = var; EQ; bound = expr_; IN; body = expr_
       { let Ex body = body in
-        Ex (Let { id; bound = hook_free_exn bound; body })
+        Ex (mkexp ~loc:$sloc (Let { id; bound = hook_free_exn bound; body }))
       }
-    | LET; LPAREN; stt = var; COMMA; set = var; RPAREN; EQ; STT; init = expr_; IN; body = expr_
-      { Ex (Stt { label = -1; stt; set; init = hook_free_exn init; body = hook_full body }) }
-    | EFF; e = expr_ { Ex (Eff (hook_free_exn e)) }
-    | VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr_); RBRACK { Ex (View (List.map hook_free_exn vss)) }
-    | IF; pred = expr_; THEN; con = expr_; ELSE; alt = expr_
-      { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = hook_free_exn alt }) }
-    | IF; pred = expr_; THEN; con = expr_
-      { Ex (Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = Const Unit }) }
+    | mkexp(LET; LPAREN; stt = var; COMMA; set = var; RPAREN; EQ; STT; init = expr_; IN; body = expr_
+      { Stt { label = -1; stt; set; init = hook_free_exn init; body = hook_full body } })
+      { $1 }
+    | mkexp(EFF; e = expr_
+      { Eff (hook_free_exn e) })
+      { $1 }
+    | mkexp(VIEW; LBRACK; vss = separated_nonempty_list(COMMA, expr_); RBRACK
+      { View (List.map hook_free_exn vss) })
+      { $1 }
+    | mkexp(IF; pred = expr_; THEN; con = expr_; ELSE; alt = expr_
+      { Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = hook_free_exn alt } })
+      { $1 }
+    | mkexp(IF; pred = expr_; THEN; con = expr_
+      { Cond { pred = hook_free_exn pred; con = hook_free_exn con; alt = Expr.mk ~loc:Location.none (Const Unit) } })
+      { $1 }
     | e1 = expr_; SEMI; e2 = expr_
       { match hook_free e1, hook_free e2 with
-        | Some e1, Some e2 -> Ex (Seq (e1, e2))
-        | _, _ -> Ex (Seq (hook_full e1, hook_full e2))
+        | Some e1, Some e2 -> Ex (mkexp ~loc:$sloc (Seq (e1, e2)))
+        | _, _ -> Ex (mkexp ~loc:$sloc (Seq (hook_full e1, hook_full e2)))
       }
-    | op = uop; expr_ = expr_ %prec prec_unary { Ex (Uop { op; arg = hook_free_exn expr_ }) }
-    | left = expr_; op = bop; right = expr_
-      { Ex (Bop { op; left = hook_free_exn left; right = hook_free_exn right }) }
-    | obj = apply; LBRACK; index = expr_; RBRACK { Ex (Get { obj = hook_free_exn obj; idx = hook_free_exn index }) }
-    | obj = apply; LBRACK; index = expr_; RBRACK; ASSIGN; value = expr_
-      { Ex (Set { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value }) }
+    | mkexp(op = uop; expr_ = expr_ %prec prec_unary
+      { Uop { op; arg = hook_free_exn expr_ } })
+      { $1 }
+    | mkexp(left = expr_; op = bop; right = expr_
+      { Bop { op; left = hook_free_exn left; right = hook_free_exn right } })
+      { $1 }
+    | mkexp(obj = apply; LBRACK; index = expr_; RBRACK
+      { Get { obj = hook_free_exn obj; idx = hook_free_exn index } })
+      { $1 }
+    | mkexp(obj = apply; LBRACK; index = expr_; RBRACK; ASSIGN; value = expr_
+      { Set { obj = hook_free_exn obj; idx = hook_free_exn index; value = hook_free_exn value } })
+      { $1 }
 %inline uop:
     | NOT { Not }
     | PLUS { Uplus }
@@ -99,15 +124,17 @@ expr_:
     | TIMES { Times }
 apply:
     | atom { $1 }
-    | fn = apply; arg = atom { Ex (App { fn = hook_free_exn fn; arg = hook_free_exn arg }) }
+    | mkexp(fn = apply; arg = atom
+      { App { fn = hook_free_exn fn; arg = hook_free_exn arg } })
+      { $1 }
 atom:
-    | UNIT { Ex (Const Unit) }
-    | TRUE { Ex (Const (Bool true)) }
-    | FALSE { Ex (Const (Bool false)) }
-    | n = INT { Ex (Const (Int n)) }
-    | s = STRING { Ex (Const (String s)) }
-    | var = var { Ex (Var var) }
-    | RECORD { Ex (Alloc) }
+    | mkexp(UNIT { Const Unit }) { $1 }
+    | mkexp(TRUE { Const (Bool true) }) { $1 }
+    | mkexp(FALSE { Const (Bool false) }) { $1 }
+    | mkexp(n = INT { Const (Int n) }) { $1 }
+    | mkexp(s = STRING { Const (String s) }) { $1 }
+    | mkexp(var = var { Var var }) { $1 }
+    | mkexp(RECORD { Alloc }) { $1 }
     | LPAREN; e = expr_; RPAREN { e }
 var:
     | x = ID { x }
