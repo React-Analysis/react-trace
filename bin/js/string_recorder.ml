@@ -60,5 +60,9 @@ let event_h =
                       (Sexp.to_string (Path.sexp_of_t path))
                 in
                 continue k path ~recording)
+        | Checkpoint _ ->
+            Some
+              (fun (k : (a, _) continuation) ~(recording : recording) ->
+                continue k () ~recording)
         | _ -> None);
   }
