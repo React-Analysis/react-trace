@@ -26,7 +26,7 @@
   dune
   (ocaml-base-compiler
    (= 5.2.0))
-  core
+  base
   js_of_ocaml
   js_of_ocaml-ppx
   flow_parser

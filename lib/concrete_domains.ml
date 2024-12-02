@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Syntax
 
 module M : Domains.S = struct

@@ -1,20 +1,22 @@
-open! Core
+open! Base
 open React_trace
 
 let position (lexbuf : Lexing.lexbuf) : string =
   let open Lexing in
   let pos = lexbuf.lex_curr_p in
-  sprintf "%s:%d:%d" pos.pos_fname pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
+  Printf.sprintf "%s:%d:%d" pos.pos_fname pos.pos_lnum
+    (pos.pos_cnum - pos.pos_bol + 1)
 
 let parse_with_error (lexbuf : Lexing.lexbuf) : Syntax.Prog.t =
   Parser.prog Lexer.read lexbuf
 
-let parse_program_str (program_str : string) : (Syntax.Prog.t, string) result =
+let parse_program_str (program_str : string) : (Syntax.Prog.t, string) Result.t
+    =
   let lexbuf = Lexing.from_string program_str in
   match parse_with_error lexbuf with
   | prog -> Ok prog
   | exception Parser.Error ->
-      Error (sprintf "%s: syntax error" (position lexbuf))
+      Error (Printf.sprintf "%s: syntax error" (position lexbuf))
 
 let () =
   Fmt_tty.setup_std_outputs ();

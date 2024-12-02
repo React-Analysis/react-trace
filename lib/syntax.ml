@@ -1,12 +1,14 @@
-open! Core
+open! Base
 
 module Id = struct
-  include String
+  include Util.Map_key (String)
 
   let unit = "()"
 end
 
-module Label = Int
+module Label = struct
+  include Util.Map_key (Int)
+end
 
 module Expr = struct
   type hook_free = private Hook_free

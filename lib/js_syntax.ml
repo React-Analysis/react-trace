@@ -1,4 +1,4 @@
-open! Core
+open! Base
 
 exception NotImplemented
 exception Unreachable
@@ -6,7 +6,7 @@ exception Unreachable
 type js_ast = (Loc.t, Loc.t) Flow_ast.Program.t
 
 let parse (filename : string) : js_ast * (Loc.t * Parse_error.t) list =
-  let contents = In_channel.read_all filename in
+  let contents = Stdio.In_channel.read_all filename in
 
   Parser_flow.program_file ~fail:false
     ~parse_options:
@@ -36,7 +36,7 @@ let fresh =
   let counter = ref 0 in
   fun () ->
     let n = !counter in
-    incr counter;
+    Int.incr counter;
     "@@" ^ Int.to_string n
 (* convert_pattern: converts js pattern declaration to a list of (name, expr) pairs.
    e. g.

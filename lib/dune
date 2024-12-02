@@ -2,7 +2,7 @@
  (name react_trace)
  (preprocess
   (pps ppx_jane))
- (libraries core logs flow_parser ppx_jane printbox printbox-text))
+ (libraries base logs flow_parser ppx_jane printbox printbox-text))
 
 (ocamllex lexer)
 

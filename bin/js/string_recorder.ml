@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open React_trace
@@ -23,7 +23,7 @@ let event_h =
                 let () = perform (Update_st (path, label, (v, q))) in
                 let recording =
                   recording
-                  ^ sprintf "[path %s] Update state %d -> %s\n"
+                  ^ Printf.sprintf "[path %s] Update state %d -> %s\n"
                       (Sexp.to_string (Path.sexp_of_t path))
                       label
                       (Sexp.to_string (sexp_of_value v))
@@ -35,7 +35,7 @@ let event_h =
                 let () = perform (Set_dec (path, dec)) in
                 let recording =
                   recording
-                  ^ sprintf "[path %s] Set decision %s\n"
+                  ^ Printf.sprintf "[path %s] Set decision %s\n"
                       (Sexp.to_string (Path.sexp_of_t path))
                       (Sexp.to_string (sexp_of_decision dec))
                 in
@@ -46,7 +46,7 @@ let event_h =
                 let () = perform (Enq_eff (path, clos)) in
                 let recording =
                   recording
-                  ^ sprintf "[path %s] Enqueue effect\n"
+                  ^ Printf.sprintf "[path %s] Enqueue effect\n"
                       (Sexp.to_string (Path.sexp_of_t path))
                 in
                 continue k () ~recording)
@@ -56,7 +56,7 @@ let event_h =
                 let path = perform Alloc_pt in
                 let recording =
                   recording
-                  ^ sprintf "Allocate path %s\n"
+                  ^ Printf.sprintf "Allocate path %s\n"
                       (Sexp.to_string (Path.sexp_of_t path))
                 in
                 continue k path ~recording)

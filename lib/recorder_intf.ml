@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Stdlib.Effect.Deep
 
 module type Intf = sig

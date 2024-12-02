@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Stdlib.Effect
 open Syntax
 open Concrete_domains

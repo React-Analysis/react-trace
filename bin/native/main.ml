@@ -1,4 +1,5 @@
-open! Core
+open! Base
+open Stdio
 open React_trace
 
 let print_position (outx : Out_channel.t) (lexbuf : Lexing.lexbuf) : unit =

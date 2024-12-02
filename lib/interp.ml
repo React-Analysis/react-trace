@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open Syntax
@@ -216,7 +216,7 @@ end = struct
             let st_trees =
               let st_store = St_store.to_alist st_store in
               List.map st_store ~f:(fun (lbl, (value, job_q)) ->
-                  let lbl = string_of_int lbl in
+                  let lbl = Int.to_string lbl in
                   let value = Sexp.to_string (sexp_of_value value) in
                   let job_q = Job_q.to_list job_q |> List.map ~f:clos in
 
@@ -238,9 +238,9 @@ end = struct
 
   let log ?(msg : string option) (pt : Path.t) : unit =
     (match msg with Some msg -> Logs.info (fun m -> m "%s" msg) | None -> ());
-    PrintBox_text.output stdout (path pt);
+    PrintBox_text.output Stdio.stdout (path pt);
     Out_channel.(
-      newline stdout;
+      output_char stdout '\n';
       flush stdout)
 
   let log_h (report : bool) =
