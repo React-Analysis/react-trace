@@ -74,10 +74,26 @@ let () =
     if !opt_pp then
       Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)
     else
-      let { Interp.steps; _ } =
-        Interp.run ?fuel:!opt_fuel ~report:!opt_report
-          ~recorder:(module Default_recorder)
-          prog
+      let steps =
+        if !opt_report then (
+          let { Interp.steps; recording; _ } =
+            Interp.run ?fuel:!opt_fuel
+              ~recorder:(module Report_box_recorder)
+              prog
+          in
+          recording |> List.rev
+          |> List.iter ~f:(fun (msg, box) ->
+                 Logs.info (fun m -> m "%s\n" msg);
+                 PrintBox_text.output Stdio.stdout box);
+          steps)
+        else
+          let { Interp.steps; _ } =
+            Interp.run ?fuel:!opt_fuel ~recorder:(module Default_recorder) prog
+          in
+          steps
       in
-      printf "\nSteps: %d\n" steps;
+      Out_channel.(
+        output_char stdout '\n';
+        flush stdout);
+      printf "Steps: %d\n" steps;
       Stdlib.exit (if Logs.err_count () > 0 then 1 else 0))

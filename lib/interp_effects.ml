@@ -35,6 +35,15 @@ type _ Stdlib.Effect.t +=
   | Lookup_ent : Path.t -> entry t
   | Update_ent : Path.t * entry -> unit t
 
+type checkpoint =
+  | Retry_start of (int * Path.t)
+  | Render_check of Path.t
+  | Render_finish of Path.t
+  | Effects_finish of Path.t
+
+type _ Stdlib.Effect.t +=
+  | Checkpoint : { msg : string; checkpoint : checkpoint } -> unit t
+
 (* For testing nontermination *)
 type _ Stdlib.Effect.t += Re_render_limit : int t
 

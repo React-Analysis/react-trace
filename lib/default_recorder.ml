@@ -34,5 +34,9 @@ let event_h =
               (fun (k : (a, _) continuation) ~(recording : recording) ->
                 let path = perform Alloc_pt in
                 continue k path ~recording)
+        | Checkpoint _ ->
+            Some
+              (fun (k : (a, _) continuation) ~(recording : recording) ->
+                continue k () ~recording)
         | _ -> None);
   }
