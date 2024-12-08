@@ -1,5 +1,9 @@
-# Created by https://www.toptal.com/developers/gitignore/api/ocaml,vim,macos
-# Edit at https://www.toptal.com/developers/gitignore?templates=ocaml,vim,macos
+# Created by https://www.toptal.com/developers/gitignore/api/ocaml,vim,macos,direnv
+# Edit at https://www.toptal.com/developers/gitignore?templates=ocaml,vim,macos,direnv
+
+### direnv ###
+.direnv
+.envrc
 
 ### macOS ###
 # General
@@ -8,7 +12,8 @@
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
@@ -85,5 +90,4 @@ tags
 # Persistent undo
 [._]*.un~
 
-# End of https://www.toptal.com/developers/gitignore/api/ocaml,vim,macos
-n
+# End of https://www.toptal.com/developers/gitignore/api/ocaml,vim,macos,direnv
