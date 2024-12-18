@@ -25,7 +25,7 @@
   ocaml
   dune
   (ocaml-base-compiler
-   (= 5.2.0))
+   (= 5.3.0~beta2))
   base
   js_of_ocaml
   js_of_ocaml-ppx

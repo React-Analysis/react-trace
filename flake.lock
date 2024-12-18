@@ -95,11 +95,11 @@
         "opam2json": "opam2json"
       },
       "locked": {
-        "lastModified": 1732617437,
-        "narHash": "sha256-jj25fziYrES8Ix6HkfSiLzrN6MZjiwlHUxFSIuLRjgE=",
+        "lastModified": 1733921344,
+        "narHash": "sha256-D4BFlu5VQCugO6wlze3BxDz5fkxoZishQTIwITLdSw8=",
         "owner": "tweag",
         "repo": "opam-nix",
-        "rev": "ea8b9cb81fe94e1fc45c6376fcff15f17319c445",
+        "rev": "43ec9805677c7ca3decd57f034c9a148bad5215c",
         "type": "github"
       },
       "original": {
@@ -127,11 +127,11 @@
     "opam-repository": {
       "flake": false,
       "locked": {
-        "lastModified": 1733656817,
-        "narHash": "sha256-ddoiIYY6AhWLUxkgtXhPbB7Du0OcHPyR4iEF/Tm8BsY=",
+        "lastModified": 1734474648,
+        "narHash": "sha256-lV68QTEyXgldXbn6WOAKdmLpIFxGr7SSSkoi0cFih6c=",
         "owner": "ocaml",
         "repo": "opam-repository",
-        "rev": "211ce1c3d5d6eb57dee3ca21cb1e4a16da41d01f",
+        "rev": "ca7f85630249c268f15747ccb64674fc5705dc94",
         "type": "github"
       },
       "original": {

@@ -20,14 +20,18 @@
         pkgs = nixpkgs.legacyPackages.${system};
         on = opam-nix.lib.${system};
         devPackagesQuery = {
-          ocaml-lsp-server = "*";
-          ocamlformat = "*";
+          ocaml-lsp-server = "1.20.0~5.3preview";
+          ocamlformat = "0.27.0";
           utop = "*";
+          alcotest = "*";
         };
         query = devPackagesQuery // {
           ocaml-base-compiler = "*";
         };
-        scope = on.buildDuneProject { resolveArgs.with-test = true; } package ./. query;
+        scope = on.buildDuneProject {
+          # resolveArgs.with-test = true;
+          resolveArgs.env.enable-ocaml-beta-repository = true;
+        } package ./. query;
         overlay = final: prev: {
           ${package} = prev.${package}.overrideAttrs (_: {
             # Prevent the ocaml dependencies from leaking into dependent environments

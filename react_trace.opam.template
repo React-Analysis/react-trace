@@ -1,5 +1,6 @@
 pin-depends: [
-  [ "flow_parser.0.239.1" "git+https://github.com/facebook/flow#5d1b246a1ac8a8fc4e431b835ab8fb7f6f5ebd30" ]
+  [ "ppxlib.0.33.1~5.3preview" "git+https://github.com/ocaml-ppx/ppxlib#218347c59cb93e463f33f06801bd61cf47f46265" ]
+  [ "flow_parser.0.257.0" "git+https://github.com/Zeta611/flow#52bf15978715a096119d422145b1bb9f32a06804" ]
   [ "printbox.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
   [ "printbox-text.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
 ]
