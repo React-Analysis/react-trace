@@ -1,5 +1,5 @@
 open! Base
-open Stdlib.Effect
+open Lib_domains
 open Syntax
 open Concrete_domains
 
@@ -8,32 +8,32 @@ exception Type_error
 exception Invalid_phase
 
 (* path and phase effects *)
-type _ Stdlib.Effect.t += Rd_pt : Path.t t | Rd_ph : phase t
+type _ eff += Rd_pt : Path.t eff | Rd_ph : phase eff
 
 (* environmental effects *)
-type _ Stdlib.Effect.t +=
-  | Rd_env : Env.t t
-  | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) t
+type _ eff +=
+  | Rd_env : Env.t eff
+  | In_env : Env.t -> (('b -> 'a) -> 'b -> 'a) eff
 
 (* memory effects *)
-type _ Stdlib.Effect.t +=
-  | Alloc_addr : obj -> Addr.t t
-  | Lookup_addr : Addr.t -> obj t
-  | Update_addr : Addr.t * obj -> unit t
+type _ eff +=
+  | Alloc_addr : obj -> Addr.t eff
+  | Lookup_addr : Addr.t -> obj eff
+  | Update_addr : Addr.t * obj -> unit eff
 
 (* tree memory effects in eval/eval_mult *)
-type _ Stdlib.Effect.t +=
-  | Lookup_st : Path.t * Label.t -> (value * Job_q.t) t
-  | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit t
-  | Get_dec : Path.t -> decision t
-  | Set_dec : Path.t * decision -> unit t
-  | Enq_eff : Path.t * clos -> unit t
+type _ eff +=
+  | Lookup_st : Path.t * Label.t -> (value * Job_q.t) eff
+  | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit eff
+  | Get_dec : Path.t -> decision eff
+  | Set_dec : Path.t * decision -> unit eff
+  | Enq_eff : Path.t * clos -> unit eff
 
 (* tree memory effects in render *)
-type _ Stdlib.Effect.t +=
-  | Alloc_pt : Path.t t
-  | Lookup_ent : Path.t -> entry t
-  | Update_ent : Path.t * entry -> unit t
+type _ eff +=
+  | Alloc_pt : Path.t eff
+  | Lookup_ent : Path.t -> entry eff
+  | Update_ent : Path.t * entry -> unit eff
 
 type checkpoint =
   | Retry_start of (int * Path.t)
@@ -41,10 +41,9 @@ type checkpoint =
   | Render_finish of Path.t
   | Effects_finish of Path.t
 
-type _ Stdlib.Effect.t +=
-  | Checkpoint : { msg : string; checkpoint : checkpoint } -> unit t
+type _ eff += Checkpoint : { msg : string; checkpoint : checkpoint } -> unit eff
 
 (* For testing nontermination *)
-type _ Stdlib.Effect.t += Re_render_limit : int t
+type _ eff += Re_render_limit : int eff
 
 exception Too_many_re_renders

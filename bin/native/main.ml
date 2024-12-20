@@ -1,6 +1,7 @@
 open! Base
 open Stdio
 open React_trace
+open Lib_domains
 
 let print_position (outx : Out_channel.t) (lexbuf : Lexing.lexbuf) : unit =
   let open Lexing in
@@ -60,11 +61,11 @@ let () =
   Arg.parse speclist (fun x -> filename := x) usage_msg;
   if String.is_empty !filename then Arg.usage speclist usage_msg
   else if !opt_parse_js then failwith "Not implemented"
-    (* (let js_syntax, _ = Js_syntax.parse !filename in *)
-    (* print_endline (Js_syntax.show js_syntax); *)
-    (* let prog = Js_syntax.convert js_syntax in *)
-    (* Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)) *)
-  else (
+  (* (let js_syntax, _ = Js_syntax.parse !filename in *)
+  (* print_endline (Js_syntax.show js_syntax); *)
+  (* let prog = Js_syntax.convert js_syntax in *)
+  (* Sexp.pp_hum Stdlib.Format.std_formatter (Syntax.Prog.sexp_of_t prog)) *)
+    else (
     Fmt_tty.setup_std_outputs ();
     Logs.set_reporter (Logs_fmt.reporter ());
     Logs.set_level (Some !opt_verbosity);

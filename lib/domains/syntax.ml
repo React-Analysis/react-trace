@@ -1,13 +1,53 @@
 open! Base
 
+module Map_key (T : sig
+  type t
+
+  val sexp_of_t : t -> Sexp.t
+  val t_of_sexp : Sexp.t -> t
+  val of_string : string -> t
+  val to_string : t -> string
+  val ( <= ) : t -> t -> bool
+  val ( >= ) : t -> t -> bool
+  val ( = ) : t -> t -> bool
+  val ( < ) : t -> t -> bool
+  val ( > ) : t -> t -> bool
+  val ( <> ) : t -> t -> bool
+  val compare : t -> t -> int
+  val min : t -> t -> t
+  val max : t -> t -> t
+  val ascending : t -> t -> int
+  val descending : t -> t -> int
+  val between : t -> low:t -> high:t -> bool
+  val clamp_exn : t -> min:t -> max:t -> t
+  val clamp : t -> min:t -> max:t -> t Or_error.t
+
+  type comparator_witness
+
+  val comparator : (t, comparator_witness) Comparator.t
+  val hash : t -> int
+  val equal : t -> t -> bool
+end) =
+struct
+  include T
+
+  module Map = struct
+    open Map
+    include M (T)
+
+    let empty = empty (module T)
+    let sexp_of_t sexp_of_v t = Map.sexp_of_m__t (module T) sexp_of_v t
+  end
+end
+
 module Id = struct
-  include Util.Map_key (String)
+  include Map_key (String)
 
   let unit = "()"
 end
 
 module Label = struct
-  include Util.Map_key (Int)
+  include Map_key (Int)
 end
 
 module Expr = struct
@@ -62,15 +102,15 @@ module Expr = struct
   let rec hook_free (expr : some_expr) : hook_free t option =
     let (Ex { desc; loc }) = expr in
     let mk = mk ~loc in
-    let open Option.Let_syntax in
+    let ( let* ) x f = Option.bind x ~f in
     match desc with
     | Let ({ body; _ } as e) ->
-        let%bind body = hook_free (Ex body) in
+        let* body = hook_free (Ex body) in
         Some (mk (Let { e with body }))
     | Stt _ | Eff _ -> None
     | Seq (e1, e2) ->
-        let%bind e1 = hook_free (Ex e1) in
-        let%bind e2 = hook_free (Ex e2) in
+        let* e1 = hook_free (Ex e1) in
+        let* e2 = hook_free (Ex e2) in
         Some (mk (Seq (e1, e2)))
     | (Const _ as e)
     | (Var _ as e)

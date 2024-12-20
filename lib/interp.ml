@@ -1,6 +1,7 @@
 open! Base
 open Stdlib.Effect
 open Stdlib.Effect.Deep
+open Lib_domains
 open Syntax
 open Concrete_domains
 open Interp_effects

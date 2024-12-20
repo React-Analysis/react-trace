@@ -1,4 +1,5 @@
 open! Base
+open Lib_domains
 open Syntax
 open Concrete_domains
 

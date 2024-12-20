@@ -1,4 +1,5 @@
 open! Base
+open Lib_domains
 
 exception NotImplemented
 exception Unreachable

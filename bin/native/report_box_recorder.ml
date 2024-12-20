@@ -3,6 +3,7 @@ open Stdlib.Effect
 open Stdlib.Effect.Deep
 open React_trace
 open Interp_effects
+open Lib_domains
 open Concrete_domains
 include Recorder_intf
 module B = PrintBox

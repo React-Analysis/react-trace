@@ -1,5 +1,6 @@
 open! Base
 open React_trace
+open Lib_domains
 
 let position (lexbuf : Lexing.lexbuf) : string =
   let open Lexing in
@@ -36,6 +37,6 @@ let () =
               prog
           in
           if Logs.err_count () > 0 then Error "error" else Ok recording)
-         |> (function Ok s -> s | Error s -> s)
+         |> ( function Ok s -> s | Error s -> s )
          |> Js.string
     end)

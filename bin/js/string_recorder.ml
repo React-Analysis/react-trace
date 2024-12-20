@@ -2,6 +2,7 @@ open! Base
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open React_trace
+open Lib_domains
 open Concrete_domains
 open Interp_effects
 include Recorder_intf
