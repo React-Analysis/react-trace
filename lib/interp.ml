@@ -447,7 +447,8 @@ type 'recording run_info = {
 }
 
 let run (type recording) ?(fuel : int option)
-    ~(recorder : (module Recorder_intf.Intf with type recording = recording))
+    ~(recorder :
+       (module Recorder.Recorder_intf.Intf with type recording = recording))
     (prog : Prog.t) : recording run_info =
   Logger.run prog;
 

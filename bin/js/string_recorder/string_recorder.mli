@@ -1,1 +1,2 @@
-include React_trace.Recorder_intf.Intf with type recording = string
+open Recorder
+include Recorder_intf.Intf with type recording = string

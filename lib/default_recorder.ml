@@ -1,7 +1,7 @@
 open Stdlib.Effect
 open Stdlib.Effect.Deep
 open Interp_effects
-include Recorder_intf
+include Recorder.Recorder_intf
 
 type recording = unit
 

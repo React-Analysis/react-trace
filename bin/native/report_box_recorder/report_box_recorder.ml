@@ -5,7 +5,7 @@ open React_trace
 open Interp_effects
 open Lib_domains
 open Concrete_domains
-include Recorder_intf
+include Recorder.Recorder_intf
 module B = PrintBox
 
 type recording = (string * B.t) list

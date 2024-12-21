@@ -5,7 +5,7 @@ open React_trace
 open Lib_domains
 open Concrete_domains
 open Interp_effects
-include Recorder_intf
+include Recorder.Recorder_intf
 
 type recording = string
 
