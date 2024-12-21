@@ -28,8 +28,8 @@ let () =
   Js.export_all
     (object%js
        method run (fuel : int) program_str =
-         (let open Result.Let_syntax in
-          let%bind prog = parse_program_str program_str in
+         (let ( let* ) x f = Result.bind x ~f in
+          let* prog = parse_program_str program_str in
           let Interp.{ recording; _ } =
             Interp.run
               ?fuel:(if fuel < 1 then None else Some fuel)

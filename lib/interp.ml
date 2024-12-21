@@ -6,151 +6,105 @@ open Syntax
 open Concrete_domains
 open Interp_effects
 
-let re_render_limit_h : 'a. ('a, re_render_limit:int -> 'a) handler =
-  {
-    retc = (fun v ~re_render_limit:_ -> v);
-    exnc = raise;
-    effc =
-      (fun (type b) (eff : b t) ->
-        match eff with
-        | Re_render_limit ->
-            Some
-              (fun (k : (b, _) continuation) ~(re_render_limit : int) ->
-                continue k re_render_limit ~re_render_limit)
-        | _ -> None);
-  }
+let re_render_limit_h (type a b) (f : a -> b) (x : a) : re_render_limit:int -> b
+    =
+  match f x with
+  | v -> fun ~re_render_limit:_ -> v
+  | effect Re_render_limit, k ->
+      fun ~re_render_limit -> continue k re_render_limit ~re_render_limit
 
-let ptph_h =
-  {
-    retc =
-      (fun v ~ptph ->
+let ptph_h (type a b) (f : a -> b) (x : a) : ptph:Path.t * phase -> b =
+  match f x with
+  | v ->
+      fun ~ptph ->
         Logger.ptph ptph `Ret;
-        v);
-    exnc = raise;
-    effc =
-      (fun (type a) (eff : a t) ->
-        match eff with
-        | Rd_pt ->
-            Some
-              (fun (k : (a, _) continuation) ~(ptph : Path.t * phase) ->
-                Logger.ptph ptph `Rd_pt;
-                continue k (fst ptph) ~ptph)
-        | Rd_ph ->
-            Some
-              (fun (k : (a, _) continuation) ~(ptph : Path.t * phase) ->
-                Logger.ptph ptph `Rd_ph;
-                continue k (snd ptph) ~ptph)
-        | _ -> None);
-  }
+        v
+  | effect Rd_pt, k ->
+      fun ~ptph ->
+        Logger.ptph ptph `Rd_pt;
+        continue k (fst ptph) ~ptph
+  | effect Rd_ph, k ->
+      fun ~ptph ->
+        Logger.ptph ptph `Rd_ph;
+        continue k (snd ptph) ~ptph
 
-let rec env_h : 'a. ('a, env:Env.t -> 'a) handler =
-  {
-    retc =
-      (fun v ~env ->
+let rec env_h : type a b. (a -> b) -> a -> env:Env.t -> b =
+ fun f x ->
+  match f x with
+  | v ->
+      fun ~env ->
         Logger.env env `Ret;
-        v);
-    exnc = raise;
-    effc =
-      (fun (type a) (eff : a t) ->
-        match eff with
-        | Rd_env ->
-            Some
-              (fun (k : (a, _) continuation) ~(env : Env.t) ->
-                Logger.env env `Rd_env;
-                continue k env ~env)
-        | In_env env' ->
-            Some
-              (fun (k : (a, _) continuation) ~(env : Env.t) ->
-                Logger.env env (`In_env env');
-                continue k (fun f x -> match_with f x env_h ~env:env') ~env)
-        | _ -> None);
-  }
+        v
+  | effect Rd_env, k ->
+      fun ~env ->
+        Logger.env env `Rd_env;
+        continue k env ~env
+  | effect In_env env', k ->
+      fun ~env ->
+        Logger.env env (`In_env env');
+        continue k (env_h ~env:env') ~env
 
-let mem_h =
-  {
-    retc =
-      (fun v ~mem ->
+let mem_h (type a b) (f : a -> b) (x : a) : mem:Memory.t -> b * Memory.t =
+  match f x with
+  | v ->
+      fun ~mem ->
         Logger.mem mem `Ret;
-        (v, mem));
-    exnc = raise;
-    effc =
-      (fun (type a) (eff : a t) ->
-        match eff with
-        | Alloc_addr obj ->
-            Some
-              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem `Alloc_addr;
-                let addr = Memory.alloc mem in
-                let mem = Memory.update mem ~addr ~obj in
-                continue k addr ~mem)
-        | Lookup_addr addr ->
-            Some
-              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem (`Lookup_addr addr);
-                continue k (Memory.lookup mem ~addr) ~mem)
-        | Update_addr (addr, v) ->
-            Some
-              (fun (k : (a, _) continuation) ~(mem : Memory.t) ->
-                Logger.mem mem (`Update_addr (addr, v));
-                continue k () ~mem:(Memory.update mem ~addr ~obj:v))
-        | _ -> None);
-  }
+        (v, mem)
+  | effect Alloc_addr obj, k ->
+      fun ~mem ->
+        Logger.mem mem `Alloc_addr;
+        let addr = Memory.alloc mem in
+        let mem = Memory.update mem ~addr ~obj in
+        continue k addr ~mem
+  | effect Lookup_addr addr, k ->
+      fun ~mem ->
+        Logger.mem mem (`Lookup_addr addr);
+        continue k (Memory.lookup mem ~addr) ~mem
+  | effect Update_addr (addr, v), k ->
+      fun ~mem ->
+        Logger.mem mem (`Update_addr (addr, v));
+        continue k () ~mem:(Memory.update mem ~addr ~obj:v)
 
-let treemem_h =
-  {
-    retc =
-      (fun v ~treemem ->
+let treemem_h (type a b) (f : a -> b) (x : a) :
+    treemem:Tree_mem.t -> b * Tree_mem.t =
+  match f x with
+  | v ->
+      fun ~treemem ->
         Logger.treemem treemem `Ret;
-        (v, treemem));
-    exnc = raise;
-    effc =
-      (fun (type a) (eff : a t) ->
-        match eff with
-        (* in eval *)
-        | Lookup_st (path, label) ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Lookup_st (path, label));
-                continue k (Tree_mem.lookup_st treemem ~path ~label) ~treemem)
-        | Update_st (path, label, (v, q)) ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Update_st (path, label, (v, q)));
-                continue k ()
-                  ~treemem:(Tree_mem.update_st treemem ~path ~label (v, q)))
-        | Get_dec path ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Get_dec path);
-                continue k (Tree_mem.get_dec treemem ~path) ~treemem)
-        | Set_dec (path, dec) ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Set_dec (path, dec));
-                continue k () ~treemem:(Tree_mem.set_dec treemem ~path dec))
-        | Enq_eff (path, clos) ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Enq_eff (path, clos));
-                continue k () ~treemem:(Tree_mem.enq_eff treemem ~path clos))
-        (* in render *)
-        | Alloc_pt ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem `Alloc_pt;
-                continue k (Tree_mem.alloc_pt treemem) ~treemem)
-        | Lookup_ent path ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Lookup_ent path);
-                continue k (Tree_mem.lookup_ent treemem ~path) ~treemem)
-        | Update_ent (path, ent) ->
-            Some
-              (fun (k : (a, _) continuation) ~(treemem : Tree_mem.t) ->
-                Logger.treemem treemem (`Update_ent (path, ent));
-                continue k () ~treemem:(Tree_mem.update_ent treemem ~path ent))
-        | _ -> None);
-  }
+        (v, treemem)
+  | effect Lookup_st (path, label), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Lookup_st (path, label));
+        continue k (Tree_mem.lookup_st treemem ~path ~label) ~treemem
+  | effect Update_st (path, label, (v, q)), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Update_st (path, label, (v, q)));
+        continue k () ~treemem:(Tree_mem.update_st treemem ~path ~label (v, q))
+  | effect Get_dec path, k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Get_dec path);
+        continue k (Tree_mem.get_dec treemem ~path) ~treemem
+  | effect Set_dec (path, dec), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Set_dec (path, dec));
+        continue k () ~treemem:(Tree_mem.set_dec treemem ~path dec)
+  | effect Enq_eff (path, clos), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Enq_eff (path, clos));
+        continue k () ~treemem:(Tree_mem.enq_eff treemem ~path clos)
+  (* NOTE: in render *)
+  | effect Alloc_pt, k ->
+      fun ~treemem ->
+        Logger.treemem treemem `Alloc_pt;
+        continue k (Tree_mem.alloc_pt treemem) ~treemem
+  | effect Lookup_ent path, k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Lookup_ent path);
+        continue k (Tree_mem.lookup_ent treemem ~path) ~treemem
+  | effect Update_ent (path, ent), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Update_ent (path, ent));
+        continue k () ~treemem:(Tree_mem.update_ent treemem ~path ent)
 
 let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
@@ -315,7 +269,7 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
       perform
         (Checkpoint
            { msg = "Will retry"; checkpoint = Retry_start (re_render, path) });
-      match_with (eval_mult ~re_render) expr ptph_h ~ptph:(path, P_retry)
+      ptph_h ~ptph:(path, P_retry) (eval_mult ~re_render) expr
   | Idle | Update -> v
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
@@ -347,9 +301,7 @@ and render1 (vs : view_spec) : tree =
       perform (Update_ent (path, { part_view; children = [] }));
 
       let vss =
-        ( (eval_mult |> fun f x -> match_with f x env_h ~env) |> fun f x ->
-          match_with f x ptph_h ~ptph:(path, P_init) )
-          body
+        (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_init)) body
         |> vss_of_value_exn
       in
       render path vss;
@@ -373,9 +325,7 @@ let rec update (path : Path.t) (arg : value option) : bool =
             Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
           in
           let vss =
-            ( (eval_mult |> fun f x -> match_with f x env_h ~env) |> fun f x ->
-              match_with f x ptph_h ~ptph:(path, P_update) )
-              body
+            (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
             |> vss_of_value_exn
           in
 
@@ -433,10 +383,7 @@ let rec commit_effs (path : Path.t) : unit =
   | Root -> ()
   | Node { eff_q; _ } -> (
       Job_q.iter eff_q ~f:(fun { body; env; _ } ->
-          ( (eval |> fun f x -> match_with f x env_h ~env) |> fun f x ->
-            match_with f x ptph_h ~ptph:(path, P_effect) )
-            body
-          |> ignore);
+          (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore);
 
       (* Refetch the entry, as committing effects may change the entry *)
       let ent = perform (Lookup_ent path) in
@@ -465,7 +412,7 @@ let rec eval_top (prog : Prog.t) : view_spec list =
 
 let step_prog (prog : Prog.t) : Path.t =
   Logger.step_prog prog;
-  let vss = match_with eval_top prog env_h ~env:Env.empty in
+  let vss = env_h ~env:Env.empty eval_top prog in
   let path = perform Alloc_pt in
   perform (Update_ent (path, { part_view = Root; children = [] }));
 
@@ -521,9 +468,9 @@ let run (type recording) ?(fuel : int option)
 
   let driver () =
     let open (val recorder) in
-    match_with driver () event_h ~recording:emp_recording
+    event_h ~recording:emp_recording driver ()
   in
-  let driver () = match_with driver () treemem_h ~treemem:Tree_mem.empty in
-  let driver () = match_with driver () mem_h ~mem:Memory.empty in
+  let driver () = treemem_h ~treemem:Tree_mem.empty driver () in
+  let driver () = mem_h ~mem:Memory.empty driver () in
   let ((steps, recording), treemem), mem = driver () in
   { steps; mem; treemem; recording }

@@ -1,0 +1,3 @@
+(library
+ (name string_recorder)
+ (libraries react_trace base))

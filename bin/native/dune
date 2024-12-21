@@ -1,14 +1,10 @@
 (executable
  (public_name react_trace)
  (name main)
- (preprocess
-  (pps ppx_jane))
  (libraries
   react_trace
+  report_box_recorder
   base
-  logs
   logs.fmt
-  fmt
   fmt.tty
-  printbox
   printbox-text))

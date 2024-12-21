@@ -75,18 +75,12 @@ let get_path_from_checkpoint = function
 
 let emp_recording = []
 
-let event_h =
-  {
-    retc = (fun v ~recording -> (v, recording));
-    exnc = raise;
-    effc =
-      (fun (type a) (eff : a t) ->
-        match eff with
-        | Checkpoint { msg; checkpoint } ->
-            Some
-              (fun (k : (a, _) continuation) ~(recording : recording) ->
-                let pt = get_path_from_checkpoint checkpoint in
-                let box = path pt in
-                continue k () ~recording:((msg, box) :: recording))
-        | _ -> None);
-  }
+let event_h (type a b) (f : a -> b) (x : a) :
+    recording:recording -> b * recording =
+  match f x with
+  | v -> fun ~recording -> (v, recording)
+  | effect Checkpoint { msg; checkpoint }, k ->
+      fun ~recording ->
+        let pt = get_path_from_checkpoint checkpoint in
+        let box = path pt in
+        continue k () ~recording:((msg, box) :: recording)
