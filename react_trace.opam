@@ -10,19 +10,19 @@ homepage: "https://github.com/React-Analysis/ReacttRace"
 bug-reports: "https://github.com/React-Analysis/ReacttRace/issues"
 depends: [
   "ocaml"
-  "dune" {>= "3.15"}
   "ocaml-base-compiler" {= "5.3.0~beta2"}
+  "menhir"
+  "dune" {>= "3.15"}
   "base"
+  "stdio"
+  "ppx_jane"
   "js_of_ocaml"
   "js_of_ocaml-ppx"
-  "flow_parser"
+  "flow_parser" {>= "0.257.0"}
+  "printbox" {>= "0.12"}
+  "printbox-text" {>= "0.12"}
   "fmt"
   "logs"
-  "menhir"
-  "ppx_jane"
-  "printbox"
-  "printbox-text"
-  "stdio"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]
@@ -44,6 +44,4 @@ dev-repo: "git+https://github.com/React-Analysis/ReacttRace.git"
 pin-depends: [
   [ "ppxlib.0.33.1~5.3preview" "git+https://github.com/ocaml-ppx/ppxlib#218347c59cb93e463f33f06801bd61cf47f46265" ]
   [ "flow_parser.0.257.0" "git+https://github.com/Zeta611/flow#52bf15978715a096119d422145b1bb9f32a06804" ]
-  [ "printbox.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
-  [ "printbox-text.0.11" "git+https://github.com/c-cube/printbox#d49d9520e7d9e96121c13643cd3eaf8876389205" ]
 ]
