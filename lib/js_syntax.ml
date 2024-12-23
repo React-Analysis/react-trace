@@ -15,12 +15,6 @@ let parse (filename : string) : js_ast * (Loc.t * Parse_error.t) list =
 
 let show (js_ast : js_ast) : string = Flow_ast.Program.show Loc.pp Loc.pp js_ast
 
-let some_seq e1 e2 =
-  let open Syntax.Expr in
-  match (hook_free e1, hook_free e2) with
-  | Some e1, Some e2 -> Ex (Seq (e1, e2))
-  | _, _ -> Ex (Seq (hook_full e1, hook_full e2))
-
 let fresh =
   let counter = ref 0 in
   fun () ->
@@ -101,75 +95,243 @@ let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   | In -> raise NotImplemented
   | Instanceof -> raise NotImplemented
 
-let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
+type label = LBreak of string option | LContinue of string option
+[@@deriving compare, equal]
+
+(*
+type completion = CNormal | CBreak of label | CReturn | CIndet
+[@@deriving compare, equal]
+*)
+type flat_completion = CNormal | CBreak of label | CReturn
+[@@deriving compare, equal]
+type completion = CDet of flat_completion | CIndet of flat_completion list
+[@@deriving compare, equal]
+
+let merge_completion (cpl1 : completion) (cpl2 : completion) : completion =
+  let cpls =
+    match (cpl1, cpl2) with
+    | CDet cpl1, CDet cpl2 -> [ cpl1; cpl2 ]
+    | CDet cpl1, CIndet cpl2 -> cpl1 :: cpl2
+    | CIndet cpl1, CDet cpl2 -> cpl2 :: cpl1
+    | CIndet cpl1, CIndet cpl2 -> cpl1 @ cpl2
+  in
+  let cpls = List.dedup_and_sort ~compare:compare_flat_completion cpls in
+  match cpls with
+  | [] -> CIndet []
+  | [ cpl ] -> CDet cpl
+  | _ -> CIndet cpls
+
+let string_of_label = function
+  | LBreak None -> "brk"
+  | LContinue None -> "con"
+  | LBreak (Some s) -> "brk:" ^ s
+  | LContinue (Some s) -> "con:" ^ s
+
+let expr_is_unit = function
+  | Syntax.Expr.Const Syntax.Expr.Unit -> true
+  | _ -> false
+
+(* return a wrapped expression that always returns a completion object *)
+let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
     Syntax.Expr.hook_free_t =
   let open Syntax.Expr in
-  let rec convert_stat tail ((_, stmt) : (Loc.t, Loc.t) Flow_ast.Statement.t) =
-    match stmt with
+  match cpl with
+  | CDet CNormal ->
+      let obj_var = fresh () in
+      let cpl_literal = Let
+            {
+              id = obj_var;
+              bound = Alloc;
+              body =
+                Seq
+                  ( Set
+                      {
+                        obj = Var obj_var;
+                        idx = Const (String "tag");
+                        value = Const (String "NRM");
+                      },
+                    Var obj_var );
+            }
+      in
+      if expr_is_unit expr then cpl_literal else Seq ( expr, cpl_literal )
+  | CDet CBreak label ->
+      let obj_var = fresh () in
+      let cpl_literal =
+          Let
+            {
+              id = obj_var;
+              bound = Alloc;
+              body =
+                Seq
+                  ( Set
+                      {
+                        obj = Var obj_var;
+                        idx = Const (String "tag");
+                        value = Const (String "BRK");
+                      },
+                    Seq
+                      ( Set
+                          {
+                            obj = Var obj_var;
+                            idx = Const (String "label");
+                            value = Const (String (string_of_label label));
+                          },
+                        Var obj_var ) );
+            }
+      in
+      if expr_is_unit expr then cpl_literal else Seq ( expr, cpl_literal )
+  | CDet CReturn ->
+      let obj_var = fresh () in
+            Let
+              {
+                id = obj_var;
+                bound = Alloc;
+                body =
+                  Seq
+                    ( Set
+                        {
+                          obj = Var obj_var;
+                          idx = Const (String "tag");
+                          value = Const (String "RET");
+                        },
+                      Seq
+                        ( Set
+                            {
+                              obj = Var obj_var;
+                              idx = Const (String "value");
+                              value = expr
+                            },
+                          Var obj_var ) );
+              }
+  | CIndet _ -> expr
+
+let convert_seq ((e1, cpl1) : Syntax.Expr.hook_free_t * completion)
+    ((e2, cpl2) : Syntax.Expr.hook_free_t * completion) :
+    Syntax.Expr.hook_free_t * completion =
+  match cpl1 with
+  | CDet CNormal ->
+      (* try to reduce redundant unit expressions *)
+      begin match e1, e2, cpl2 with
+      | Const Unit, _, _ -> (e2, cpl2)
+      | _, Const Unit, CDet CNormal -> (e1, CDet CNormal)
+      | _ -> (Seq (e1, e2), cpl2)
+      end
+  | CDet (CBreak _ | CReturn) -> (e1, cpl1)
+  | CIndet _ when (expr_is_unit e2 && equal_completion cpl2 (CDet CNormal)) ->
+      (* should output (let cpl = e1 in if cpl.tag = "NRM" then { tag: "NRM" } else cpl),
+         which is equivalent to (e1) *)
+      (e1, cpl1)
+  | CIndet cpls1 when List.exists cpls1 ~f:(fun cpl -> equal_flat_completion cpl CNormal) ->
+      (* let cpl = e1 in if cpl.tag = "NRM" then [wrapped] e2 else cpl *)
+      let open Syntax.Expr in
+      let cpl_var = fresh () in
+      ( Let
+          {
+            id = cpl_var;
+            bound = e1;
+            body =
+              Cond
+                {
+                  pred =
+                    Bop
+                      {
+                        op = Eq;
+                        left =
+                          Get { obj = Var cpl_var; idx = Const (String "tag") };
+                        right = Const (String "NRM");
+                      };
+                  con = wrap_cpl cpl2 e2;
+                  alt = Var cpl_var;
+                };
+          },
+        merge_completion cpl1 cpl2 )
+  | CIndet _ ->
+      (* e2 is never executed *)
+      (e1, cpl1)
+
+let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
+    Syntax.Expr.hook_free_t * completion =
+  let open Syntax.Expr in
+  let rec convert_stat (tail, tail_cpl)
+      ((_, stmt) : (Loc.t, Loc.t) Flow_ast.Statement.t) =
+    let res = match stmt with
     | Block { body; _ } ->
-        let body = convert_stat_list body in
-        Seq (body, tail)
-    | Break _ -> raise NotImplemented
+        let body, cpl = convert_stat_list body in
+        convert_seq (tail, tail_cpl) (body, cpl)
+    | Break { label; _ } ->
+        let label = Option.map label ~f:(fun (_, { name; _ }) -> name) in
+        (Const Unit, CDet (CBreak (LBreak label)))
     | ClassDeclaration _ -> raise NotImplemented
     | ComponentDeclaration _ -> raise NotImplemented
-    | Continue _ -> raise NotImplemented
-    | Debugger _ -> tail
+    | Continue { label; _ } ->
+        let label = Option.map label ~f:(fun (_, { name; _ }) -> name) in
+        (Const Unit, CDet (CBreak (LContinue label)))
+    | Debugger _ -> (tail, tail_cpl)
     | DeclareClass _ | DeclareComponent _ | DeclareEnum _
     | DeclareExportDeclaration _ | DeclareFunction _ | DeclareInterface _
     | DeclareModule _ | DeclareModuleExports _ | DeclareNamespace _
     | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
         (* flow statements starting with 'declare' *)
-        tail
+        (tail, tail_cpl)
     | DoWhile _ -> raise NotImplemented
-    | Empty _ -> tail
+    | Empty _ -> (tail, tail_cpl)
     | EnumDeclaration _ -> raise NotImplemented
     | ExportDefaultDeclaration { declaration; _ } -> (
         (* TODO: handle export default declaration *)
         match declaration with
         | Declaration stmt ->
             (* delegate to var and function declaration *)
-            convert_stat tail stmt
-        | Expression expr -> Seq (convert_expr expr, tail))
+            convert_stat (tail, tail_cpl) stmt
+        | Expression expr ->
+            convert_seq (convert_expr expr, CDet CNormal) (tail, tail_cpl))
     | ExportNamedDeclaration { declaration; _ } -> (
         (* TODO: handle export named declaration, especially those without
            declaration *)
         match declaration with
         | Some stmt ->
             (* delegate to var and function declaration *)
-            convert_stat tail stmt
-        | None -> tail)
+            convert_stat (tail, tail_cpl) stmt
+        | None -> (tail, tail_cpl))
     | Expression { expression; _ } ->
         let expr = convert_expr expression in
-        Seq (expr, tail)
+        convert_seq (expr, CDet CNormal) (tail, tail_cpl)
     | For _ -> raise NotImplemented
     | ForIn _ -> raise NotImplemented
     | ForOf _ -> raise NotImplemented
     | FunctionDeclaration f -> (
         let expr = convert_func f in
         match f.id with
-        | Some (_, { name; _ }) -> Let { id = name; bound = expr; body = tail }
-        | None -> Seq (expr, tail))
+        | Some (_, { name; _ }) ->
+            (Let { id = name; bound = expr; body = tail }, tail_cpl)
+        | None ->
+            convert_seq (expr, CDet CNormal) (tail, tail_cpl))
     | If { test; consequent; alternate; _ } ->
         let test = convert_expr test in
-        let consequent = convert_stat (Const Unit) consequent in
-        let alternate =
+        let con, con_cpl = convert_stat (Const Unit, CDet CNormal) consequent in
+        let alt, alt_cpl =
           match alternate with
-          | Some (_, { body; _ }) -> convert_stat (Const Unit) body
-          | None -> Const Unit
+          | Some (_, { body; _ }) -> convert_stat (Const Unit, CDet CNormal) body
+          | None -> (Const Unit, CDet CNormal)
         in
-        Seq (Cond { pred = test; con = consequent; alt = alternate }, tail)
+        let cpl = merge_completion con_cpl alt_cpl in
+        let (con, alt) =
+          match cpl with
+          | CDet _ -> (con, alt)
+          | CIndet _ -> (wrap_cpl con_cpl con, wrap_cpl alt_cpl alt)
+        in
+        convert_seq (Cond { pred = test; con; alt }, cpl) (tail, tail_cpl)
     | ImportDeclaration _ -> raise NotImplemented
     | InterfaceDeclaration _ -> raise NotImplemented
     | Labeled _ ->
         (* TODO: handle labeled statement *)
-        tail
+        (tail, tail_cpl)
     | Return _ -> raise NotImplemented
     | Switch _ -> raise NotImplemented
     | Throw _ -> raise NotImplemented
     | Try _ -> raise NotImplemented
     | TypeAlias _ | OpaqueType _ ->
         (* flow type declaration *)
-        tail
+        (tail, tail_cpl)
     | VariableDeclaration { declarations; _ } ->
         let decls =
           List.concat_map declarations ~f:(fun (_, { id; init; _ }) ->
@@ -180,13 +342,28 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
               in
               convert_pattern id ~base_expr:init)
         in
-        decls |> List.rev
-        |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
-               Let { id = name; bound = expr; body = tail })
+        ( decls |> List.rev
+          |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
+                 Let { id = name; bound = expr; body = tail }),
+          tail_cpl )
     | While _ -> raise NotImplemented
     | With _ -> raise NotImplemented
+    in
+    (*
+    print_endline ("convert_stat " ^ (Flow_ast.Statement.show_t' Loc.pp Loc.pp stmt) ^ " = \n" ^
+      (Syntax.Expr.sexp_of_hook_free_t (fst res) |> Sexp.to_string)
+    );
+    *)
+    res
   in
-  List.rev body |> List.fold ~init:(Const Unit) ~f:convert_stat
+  let res = List.rev body |> List.fold ~init:(Const Unit, CDet CNormal) ~f:convert_stat in
+  (*
+  print_endline ("convert_stat_list [" ^ (List.map body ~f:(fun (_, stmt) ->
+    Flow_ast.Statement.show_t' Loc.pp Loc.pp stmt) |> String.concat ~sep:"; ") ^ "] = \n" ^
+    (Syntax.Expr.sexp_of_hook_free_t (fst res) |> Sexp.to_string)
+  );
+  *)
+  res
 
 and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
     Syntax.Expr.hook_free_t =
@@ -207,17 +384,54 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
         in
         (param_name, param_bindings)
   in
-  let body =
+  let body, cpl =
     match body with
     | BodyBlock (_, { body; _ }) -> convert_stat_list body
-    | BodyExpression expr -> convert_expr expr
+    | BodyExpression expr -> (convert_expr expr, CDet CNormal)
   in
   let body =
     List.rev param_bindings
     |> List.fold ~init:body ~f:(fun last_expr (name, expr) ->
            Let { id = name; bound = expr; body = last_expr })
   in
-  Fn { param = param_name; body }
+  match cpl with
+  | CDet CNormal -> Fn { param = param_name; body =
+    Seq (body, Const Unit) }
+  | CDet (CBreak _ | CReturn) -> Fn { param = param_name; body }
+  | CIndet cpls ->
+      (* λx. let r = body in if r.tag = "RET" then r.value else () *)
+      let ret_var = fresh () in
+      if List.exists cpls ~f:(fun cpl -> equal_flat_completion cpl CNormal) then
+      Fn
+        {
+          param = param_name;
+          body =
+            Let
+              {
+                id = ret_var;
+                bound = body;
+                body =
+                  Cond
+                    {
+                      pred =
+                        Bop
+                          {
+                            op = Eq;
+                            left =
+                              Get
+                                {
+                                  obj = Var ret_var;
+                                  idx = Const (String "tag");
+                                };
+                            right = Const (String "RET");
+                          };
+                      con =
+                        Get { obj = Var ret_var; idx = Const (String "value") };
+                      alt = Const Unit;
+                    };
+              };
+        }
+      else Fn { param = param_name; body }
 
 and convert_call (callee : Syntax.Expr.hook_free_t)
     ((_, { arguments; _ }) : (Loc.t, Loc.t) Flow_ast.Expression.ArgList.t) :
@@ -472,7 +686,7 @@ let convert (js_ast : js_ast) : Syntax.Prog.t =
            Syntax.Expr.hook_full } *)
         | _ -> Second stmt)
   in
-  let last_expr = stats |> convert_stat_list in
+  let last_expr, _ = convert_stat_list stats in
   List.rev comps
   |> List.fold ~init:(Syntax.Prog.Expr last_expr) ~f:(fun last_expr comp ->
          Syntax.Prog.Comp (comp, last_expr))

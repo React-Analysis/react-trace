@@ -491,24 +491,25 @@ let js_var () =
   let js, _ = parse_js "x" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "x; ()" |> Prog.sexp_of_t)
+    ~msg:"convert var" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "x" |> Prog.sexp_of_t)
 
 let js_literal () =
   let open Syntax in
   let js, _ = parse_js "42; true; null" in
   let prog = Js_syntax.convert js in
+  (* null is converted to unit and optimized out *)
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "42; true; (); ()" |> Prog.sexp_of_t)
+    ~msg:"convert literal" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "42; true" |> Prog.sexp_of_t)
 
 let js_jsx () =
   let open Syntax in
   let js, _ = parse_js "<></>; <Comp />" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "view [()]; view [Comp ()]; ()" |> Prog.sexp_of_t)
+    ~msg:"convert jsx" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "view [()]; view [Comp ()]" |> Prog.sexp_of_t)
 
 let js_op () =
   let open Syntax in
@@ -522,7 +523,7 @@ void a; -a; +a; !a|}
   in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert operator" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog
          {|
@@ -531,7 +532,7 @@ void a; -a; +a; !a|}
 (let a''' = a in if a''' = () then b else a''');
 a = b; a <> b; a < b; a <= b; a > b; a >= b;
 a + b; a - b; a * b;
-(a; ()); -a; +a; not a; ()|}
+(a; ()); -a; +a; not a|}
       |> alpha_conv_prog Fun.id prog
       |> Prog.sexp_of_t)
 
@@ -540,9 +541,9 @@ let js_optcall () =
   let js, _ = parse_js "a?.(b)" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert optional call" ~actual:(Prog.sexp_of_t prog)
     ~expected:
-      (parse_prog "(let a' = a in if a' = () then () else a'(b)); ()"
+      (parse_prog "let a' = a in if a' = () then () else a'(b)"
       |> alpha_conv_prog Fun.id prog
       |> Prog.sexp_of_t)
 
@@ -551,15 +552,15 @@ let js_cond () =
   let js, _ = parse_js "if (a) b; else c;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "if a then (b; ()) else (c; ()); ()" |> Prog.sexp_of_t)
+    ~msg:"convert conditional" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "if a then b else c" |> Prog.sexp_of_t)
 
 let js_pattern_id () =
   let open Syntax in
   let js, _ = parse_js "let p = q;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"condition id pattern" ~actual:(Prog.sexp_of_t prog)
     ~expected:(parse_prog {|let p = q in ()|} |> Prog.sexp_of_t)
 
 let js_pattern_object () =
@@ -567,7 +568,7 @@ let js_pattern_object () =
   let js, _ = parse_js "let {x, y} = q;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert object pattern" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog {|
 let q' = q in
@@ -582,7 +583,7 @@ let js_pattern_array () =
   let js, _ = parse_js "let [x, y, , z] = q;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert array pattern" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog
          {|
@@ -599,7 +600,7 @@ let js_pattern_nested () =
   let js, _ = parse_js "let {x: {y: [a, b]}} = q;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert nested pattern" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog
          {|
@@ -617,13 +618,51 @@ let js_object () =
   let js, _ = parse_js "let p = {y: 1, z: 2, 3: 4}; p.y; p[1+2]" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Prog.sexp_of_t prog)
+    ~msg:"convert object" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog
          {|
-let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]; ()|}
+let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]|}
       |> alpha_conv_prog Fun.id prog
       |> Prog.sexp_of_t)
+
+let js_if_cpl_same () =
+  let open Syntax in
+  let js, _ = parse_js "if (a) break A; else break A;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert conditional with same completion" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog {|
+      if a then ()
+      else ()
+    |}
+    |> Prog.sexp_of_t)
+
+let js_if_cpl_brk_brk () =
+  let open Syntax in
+  let js, _ = parse_js "if (a) break A; else break B;" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert conditional with break-break completion" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog {|
+      if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
+      else (let obj2 = {} in obj2["tag"] := "BRK"; obj2["label"] := "brk:B"; obj2)
+    |}
+    |> alpha_conv_prog Fun.id prog
+    |> Prog.sexp_of_t)
+
+let js_if_cpl_brk_nrm () =
+  let open Syntax in
+  let js, _ = parse_js "if (a) break A; else b" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert conditional with break-normal completion" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog {|
+      if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
+      else (b; let obj2 = {} in obj2["tag"] := "NRM"; obj2)
+    |}
+    |> alpha_conv_prog Fun.id prog
+    |> Prog.sexp_of_t)
 
 let no_side_effect () =
   let prog =
@@ -965,6 +1004,10 @@ let () =
           test_case "array pattern" `Quick js_pattern_array;
           test_case "nested pattern" `Quick js_pattern_nested;
           test_case "object" `Quick js_object;
+          (* completion tests *)
+          test_case "if cpl break break" `Quick js_if_cpl_brk_brk;
+          test_case "if cpl break normal" `Quick js_if_cpl_brk_nrm;
+          test_case "if cpl same" `Quick js_if_cpl_same;
         ] );
       ( "steps",
         [
