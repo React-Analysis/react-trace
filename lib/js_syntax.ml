@@ -33,42 +33,6 @@ let fresh =
 *)
 [@@ocamlformat "wrap-comments=false"]
 
-let rec convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
-    ~(base_expr : Syntax.Expr.hook_free_t) :
-    (string * Syntax.Expr.hook_free_t) list =
-  let open Syntax.Expr in
-  match pattern with
-  | Identifier { name = _, { name; _ }; _ } -> [ (name, base_expr) ]
-  | Object { properties; _ } ->
-      let base_name = fresh () in
-      (base_name, base_expr)
-      :: List.concat_map properties ~f:(function
-           | Property (_, { key; pattern; default = None; _ }) ->
-               let key =
-                 match key with
-                 | StringLiteral (_, { value; _ }) -> Const (String value)
-                 | NumberLiteral (_, { value; _ }) ->
-                     Const (Int (Int.of_float value))
-                 | BigIntLiteral _ -> raise NotImplemented
-                 | Identifier (_, { name; _ }) -> Const (String name)
-                 | Computed _ -> raise NotImplemented
-               in
-               convert_pattern pattern
-                 ~base_expr:(Get { obj = Var base_name; idx = key })
-           | Property (_, { default = Some _; _ }) -> raise NotImplemented
-           | RestElement _ -> raise NotImplemented)
-  | Array { elements; _ } ->
-      let base_name = fresh () in
-      (base_name, base_expr)
-      :: List.concat_mapi elements ~f:(fun i -> function
-           | Element (_, { argument; default = None }) ->
-               convert_pattern argument
-                 ~base_expr:(Get { obj = Var base_name; idx = Const (Int i) })
-           | Element (_, { default = Some _; _ }) -> raise NotImplemented
-           | RestElement _ -> raise NotImplemented
-           | Hole _ -> [])
-  | Expression _ -> raise Unreachable
-
 let convert_bop (bop : Flow_ast.Expression.Binary.operator) : Syntax.Expr.bop =
   let open Syntax.Expr in
   match bop with
@@ -514,7 +478,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | JSXFragment _ ->
       (* TODO *)
       View [ Const Unit ]
-  | StringLiteral _ -> raise NotImplemented
+  | StringLiteral { value; _ } -> Const (String value)
   | BooleanLiteral { value; _ } -> Const (Bool value)
   | NullLiteral _ ->
       (* TODO: discriminate null and undefined *)
@@ -522,7 +486,8 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | NumberLiteral { value; _ } ->
       (* TODO: handle non-int value *)
       Const (Int (Int.of_float value))
-  | BigIntLiteral _ -> raise NotImplemented
+  | BigIntLiteral { value = Some value; _ } -> Const (Int (value |> Int64.to_int_exn))
+  | BigIntLiteral { value = None; _ } -> raise NotImplemented
   | RegExpLiteral _ -> raise NotImplemented
   | ModuleRefLiteral _ -> raise NotImplemented
   | Logical { operator; left; right; _ } -> (
@@ -568,6 +533,7 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
   | MetaProperty _ -> raise NotImplemented
   | New _ -> raise NotImplemented
   | Object { properties; _ } ->
+      (* TODO: keys should be converted to string *)
       (* { a: x, b: y } --> (let obj = {} in obj.a := x; obj.b := y; obj) *)
       let obj = fresh () in
       let convert_key_to_set prop_value = function
@@ -581,11 +547,20 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
                 idx = Const (Int (Int.of_float value));
                 value = prop_value;
               }
-        | BigIntLiteral _ -> raise NotImplemented
+        | BigIntLiteral (_, { value = Some value; _ }) ->
+            Set
+              {
+                obj = Var obj;
+                idx = Const (Int (Int64.to_int_exn value));
+                value = prop_value;
+              }
+        | BigIntLiteral (_, { value = None; _ }) -> raise NotImplemented
         | Identifier (_, { name; _ }) ->
             Set { obj = Var obj; idx = Const (String name); value = prop_value }
         | PrivateName _ -> raise NotImplemented
-        | Computed _ -> raise NotImplemented
+        | Computed (_, { expression; _ }) ->
+            let idx = convert_expr expression in
+            Set { obj = Var obj; idx; value = prop_value }
       in
       let asgns =
         List.map properties ~f:(function
@@ -664,6 +639,44 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
       | Await -> raise NotImplemented)
   | Update _ -> raise NotImplemented
   | Yield _ -> raise NotImplemented
+
+and convert_pattern ((_, pattern) : (Loc.t, Loc.t) Flow_ast.Pattern.t)
+    ~(base_expr : Syntax.Expr.hook_free_t) :
+    (string * Syntax.Expr.hook_free_t) list =
+  let open Syntax.Expr in
+  match pattern with
+  | Identifier { name = _, { name; _ }; _ } -> [ (name, base_expr) ]
+  | Object { properties; _ } ->
+      let base_name = fresh () in
+      (base_name, base_expr)
+      :: List.concat_map properties ~f:(function
+           | Property (_, { key; pattern; default = None; _ }) ->
+               let key =
+                 match key with
+                 | StringLiteral (_, { value; _ }) -> Const (String value)
+                 | NumberLiteral (_, { value; _ }) ->
+                     Const (Int (Int.of_float value))
+                 | BigIntLiteral (_, { value = Some value; _ }) ->
+                     Const (Int (Int64.to_int_exn value))
+                 | BigIntLiteral (_, { value = None; _ }) -> raise NotImplemented
+                 | Identifier (_, { name; _ }) -> Const (String name)
+                 | Computed (_, { expression; _ }) -> convert_expr expression
+               in
+               convert_pattern pattern
+                 ~base_expr:(Get { obj = Var base_name; idx = key })
+           | Property (_, { default = Some _; _ }) -> raise NotImplemented
+           | RestElement _ -> raise NotImplemented)
+  | Array { elements; _ } ->
+      let base_name = fresh () in
+      (base_name, base_expr)
+      :: List.concat_mapi elements ~f:(fun i -> function
+           | Element (_, { argument; default = None }) ->
+               convert_pattern argument
+                 ~base_expr:(Get { obj = Var base_name; idx = Const (Int i) })
+           | Element (_, { default = Some _; _ }) -> raise NotImplemented
+           | RestElement _ -> raise NotImplemented
+           | Hole _ -> [])
+  | Expression _ -> raise Unreachable
 
 let convert (js_ast : js_ast) : Syntax.Prog.t =
   let _, { Flow_ast.Program.statements; _ } = js_ast in
