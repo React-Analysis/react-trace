@@ -497,10 +497,20 @@ and convert_expr ((_, expr) : (Loc.t, Loc.t) Flow_ast.Expression.t) :
       (* TODO: handle opening and attributes and children *)
       let name =
         match name with
-        | Identifier (_, { name; _ }) -> name
+        | Identifier (_, { name; _ }) -> Var name
+        | MemberExpression (_, name) ->
+          let open Flow_ast.JSX.MemberExpression in
+          let rec loop { _object; property = _, { name; _ }; _ } =
+            let obj = match _object with
+              | Identifier (_, { name; _ }) -> Var name
+              | MemberExpression (_, obj) -> loop obj
+            in
+            Get { obj; idx = Const (String name) }
+          in
+          loop name
         | _ -> raise NotImplemented (* non-identifier JSX element name *)
       in
-      View [ App { fn = Var name; arg = Const Unit } ]
+      View [ App { fn = name; arg = Const Unit } ]
   | JSXFragment _ ->
       (* TODO *)
       View [ Const Unit ]

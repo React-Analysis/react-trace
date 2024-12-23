@@ -505,11 +505,11 @@ let js_literal () =
 
 let js_jsx () =
   let open Syntax in
-  let js, _ = parse_js "<></>; <Comp />" in
+  let js, _ = parse_js "<></>; <Comp />; <Mod.Comp />" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert jsx" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "view [()]; view [Comp ()]" |> Prog.sexp_of_t)
+    ~expected:(parse_prog {|view [()]; view [Comp ()]; view [(Mod["Comp"]) ()]|} |> Prog.sexp_of_t)
 
 let js_op () =
   let open Syntax in
