@@ -289,7 +289,10 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | Labeled _ ->
         (* TODO: handle labeled statement *)
         (tail, tail_cpl)
-    | Return _ -> raise NotImplemented
+    | Return { argument = Some expr; _ } ->
+        let expr = convert_expr expr in
+        (expr, CDet CReturn)
+    | Return { argument = None; _ } -> (Const Unit, CDet CReturn)
     | Switch _ -> raise NotImplemented
     | Throw _ -> raise NotImplemented
     | Try _ -> raise NotImplemented
