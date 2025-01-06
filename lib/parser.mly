@@ -18,9 +18,9 @@ and label_stts_expr label = function
 %token <int> INT
 %token <string> ID
 %token <string> STRING
-%token RECORD DOT ASSIGN
+%token RECORD ASSIGN
 %token VIEW
-%token FUN LET STT IN EFF
+%token FUN REC LET STT IN EFF
 %token IF THEN ELSE
 %token NOT EQ LT GT NE LE GE
 %token AND OR
@@ -58,7 +58,9 @@ comp_expr:
     | LET; name = var; param = var; EQ; body = expr_ { { name; param; body = hook_full body } }
 expr_:
     | apply { $1 }
-    | FUN; param = var; RARROW; body = expr_ { Ex (Fn { param; body = hook_free_exn body }) }
+    | FUN; param = var; RARROW; body = expr_ { Ex (Fn { self = None; param; body = hook_free_exn body }) }
+    | REC; name = var; EQ; FUN; param = var; RARROW; body = expr_
+      { Ex (Fn { self = Some name; param; body = hook_free_exn body }) }
     | LET; id = var; EQ; bound = expr_; IN; body = expr_
       { let Ex body = body in
         Ex (Let { id; bound = hook_free_exn bound; body })

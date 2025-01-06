@@ -213,6 +213,10 @@ let convert_seq ((e1, cpl1) : Syntax.Expr.hook_free_t * completion)
       (* e2 is never executed *)
       (e1, cpl1)
 
+let convert_repeat ((_body, _cpl) : Syntax.Expr.hook_free_t * completion) :
+    Syntax.Expr.hook_free_t * completion =
+  raise NotImplemented (* TODAY TODO *)
+
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.hook_free_t * completion =
   let open Syntax.Expr in
@@ -237,7 +241,8 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
         (* flow statements starting with 'declare' *)
         (tail, tail_cpl)
-    | DoWhile _ -> raise NotImplemented
+    | DoWhile _ ->
+        raise NotImplemented (* TODAY TODO *)
     | Empty _ -> (tail, tail_cpl)
     | EnumDeclaration _ -> raise NotImplemented
     | ExportDefaultDeclaration { declaration; _ } -> (
@@ -313,7 +318,7 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
           |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
                  Let { id = name; bound = expr; body = tail }),
           tail_cpl )
-    | While _ -> raise NotImplemented
+    | While _ -> raise NotImplemented (* TODAY TODO *)
     | With _ -> raise NotImplemented
     in
     (*
@@ -332,10 +337,10 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
   *)
   res
 
-and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
+and convert_func ({ id; params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
     Syntax.Expr.hook_free_t =
-  (* TODO: handle recursive binding *)
   let open Syntax.Expr in
+  let self = Option.map id ~f:(fun (_, { name; _ }) -> name) in
   let param =
     match params with
     | _, { params = [ (_, { argument; default = None }) ]; _ } -> argument
@@ -362,15 +367,20 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
            Let { id = name; bound = expr; body = last_expr })
   in
   match cpl with
-  | CDet CNormal -> Fn { param = param_name; body =
-    Seq (body, Const Unit) }
-  | CDet (CBreak _ | CReturn) -> Fn { param = param_name; body }
+  | CDet CNormal ->
+      (* TODO: is this correct? *)
+      let (body', _) = convert_seq (body, cpl) (Const Unit, CDet CReturn) in
+      Fn {
+    self;
+    param = param_name; body = body' }
+  | CDet (CBreak _ | CReturn) -> Fn { self; param = param_name; body }
   | CIndet cpls ->
       (* λx. let r = body in if r.tag = "RET" then r.value else () *)
       let ret_var = fresh () in
       if List.exists cpls ~f:(fun cpl -> equal_flat_completion cpl CNormal) then
       Fn
         {
+          self;
           param = param_name;
           body =
             Let
@@ -398,7 +408,7 @@ and convert_func ({ params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) :
                     };
               };
         }
-      else Fn { param = param_name; body }
+      else Fn { self; param = param_name; body }
 
 and convert_call (callee : Syntax.Expr.hook_free_t)
     ((_, { arguments; _ }) : (Loc.t, Loc.t) Flow_ast.Expression.ArgList.t) :

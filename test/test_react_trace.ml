@@ -32,8 +32,8 @@ let rec alpha_conv_expr_blind :
             con = alpha_conv_expr_blind bindings con;
             alt = alpha_conv_expr_blind bindings alt;
           }
-    | Fn { param; body } ->
-        Fn { param; body = alpha_conv_expr_blind bindings body }
+    | Fn { self; param; body } ->
+        Fn { self = Option.map ~f:bindings self; param; body = alpha_conv_expr_blind bindings body }
     | App { fn; arg } ->
         App
           {
@@ -109,9 +109,23 @@ let rec alpha_conv_expr :
             con = alpha_conv_expr bindings con con';
             alt = alpha_conv_expr bindings alt alt';
           }
-    | Fn { param; body }, Fn { param = param'; body = body' } ->
-        let bindings' x = if String.(x = param') then param else bindings x in
-        Fn { param; body = alpha_conv_expr bindings' body body' }
+    | Fn { self = None; param; body }, Fn { self = None; param = param'; body = body' } ->
+        let bindings' x =
+          if String.(x = param') then param else
+          bindings x in
+        Fn { self = None; param; body = alpha_conv_expr bindings' body body' }
+    | Fn { self = Some self; param; body }, Fn { self = Some self'; param = param'; body = body' } ->
+        (*
+  The function name is bound before the parameters
+  according to js semantics (ECMA-262 14th edition, p.347, "15.2.5 Runtime Semantics: InstantiateOrdinaryFunctionExpression":
+    "5. Perform ! funcEnv.CreateImmutableBinding(name, false).").
+    Thus param takes precedence over self.
+   *)
+        let bindings' x =
+          if String.(x = param') then param else
+          if String.(x = self') then self else
+          bindings x in
+        Fn { self = Some self; param; body = alpha_conv_expr bindings' body body' }
     | App { fn; arg }, App { fn = fn'; arg = arg' } ->
         App
           {
@@ -292,19 +306,36 @@ let parse_fn () =
   let open Syntax in
   let (Ex expr) = parse_expr "fun x -> fun y -> x + y" in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse closed cond" ~expected:(Expr.sexp_of_t expr)
+    ~msg:"parse function" ~expected:(Expr.sexp_of_t expr)
     ~actual:
       Expr.(
         sexp_of_t
           (Fn
              {
+               self = None;
                param = "x";
                body =
                  Fn
                    {
+                     self = None;
                      param = "y";
                      body = Bop { op = Plus; left = Var "x"; right = Var "y" };
                    };
+             }))
+
+let parse_rec () =
+  let open Syntax in
+  let (Ex expr) = parse_expr "rec f = fun x -> f x" in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"parse recursive function" ~actual:(Expr.sexp_of_t expr)
+    ~expected:
+      Expr.(
+        sexp_of_t
+          (Fn
+             {
+               self = Some "f";
+               param = "x";
+               body = App { fn = Var "f"; arg = Var "x" };
              }))
 
 let parse_app () =
@@ -493,6 +524,22 @@ let js_var () =
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert var" ~actual:(Prog.sexp_of_t prog)
     ~expected:(parse_prog "x" |> Prog.sexp_of_t)
+
+let js_fn () =
+  let open Syntax in
+  let js, _ = parse_js "let t = (function(x) {})" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert function" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "let t = fun x -> () in ()" |> Prog.sexp_of_t)
+
+let js_rec () =
+  let open Syntax in
+  let js, _ = parse_js "let f = (function(x) { return f(x); })" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert recursive function" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog "let f = fun x -> f x in ()" |> Prog.sexp_of_t)
 
 let js_literal () =
   let open Syntax in
@@ -981,6 +1028,7 @@ let () =
           test_case "open cond" `Quick parse_open_cond;
           test_case "closed cond" `Quick parse_closed_cond;
           test_case "fn" `Quick parse_fn;
+          test_case "rec" `Quick parse_rec;
           test_case "app" `Quick parse_app;
           test_case "let" `Quick parse_let;
           test_case "stt" `Quick parse_stt;
@@ -994,6 +1042,8 @@ let () =
       ( "convert",
         [
           test_case "var" `Quick js_var;
+          test_case "function" `Quick js_fn;
+          test_case "recursive function" `Quick js_rec;
           test_case "literal" `Quick js_literal;
           test_case "jsx" `Quick js_jsx;
           test_case "binop" `Quick js_op;

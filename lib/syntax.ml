@@ -20,7 +20,7 @@ module Expr = struct
     | Var : Id.t -> _ t
     | View : hook_free t list -> _ t
     | Cond : { pred : hook_free t; con : hook_free t; alt : hook_free t } -> _ t
-    | Fn : { param : Id.t; body : hook_free t } -> _ t
+    | Fn : { self : Id.t option; param : Id.t; body : hook_free t } -> _ t
     | App : { fn : hook_free t; arg : hook_free t } -> _ t
     | Let : { id : Id.t; bound : hook_free t; body : 'a t } -> 'a t
     | Stt : {
@@ -121,7 +121,7 @@ module Expr = struct
     | View es -> l (a "View" :: List.map ~f:sexp_of_t es)
     | Cond { pred; con; alt } ->
         l [ a "Cond"; sexp_of_t pred; sexp_of_t con; sexp_of_t alt ]
-    | Fn { param; body } -> l [ a "Fn"; Id.sexp_of_t param; sexp_of_t body ]
+    | Fn { self; param; body } -> l [ a "Fn"; Option.sexp_of_t Id.sexp_of_t self; Id.sexp_of_t param; sexp_of_t body ]
     | App { fn; arg } -> l [ a "App"; sexp_of_t fn; sexp_of_t arg ]
     | Let { id; bound; body } ->
         l [ a "Let"; Id.sexp_of_t id; sexp_of_t bound; sexp_of_t body ]

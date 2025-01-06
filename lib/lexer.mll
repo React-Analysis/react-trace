@@ -14,6 +14,7 @@ let keywords =
       ("not", NOT);
       ("view", VIEW);
       ("fun", FUN);
+      ("rec", REC);
       ("if", IF);
       ("then", THEN);
       ("else", ELSE);
@@ -59,7 +60,6 @@ rule read =
   | id as s   { match Hashtbl.find_opt keywords s with Some s -> s | None -> ID s }
   | str as s  { STRING (String.sub s 1 (String.length s - 2) |> unescape_string) }
   | "{}"      { RECORD }
-  | '.'       { DOT }
   | ":="      { ASSIGN }
   | '#'       { comment lexbuf }
   | "->"      { RARROW }

@@ -10,7 +10,7 @@ module M : Domains.S = struct
     type st_store = St_store.t [@@deriving sexp_of]
     type job_q = Job_q.t [@@deriving sexp_of]
 
-    type clos = { param : Id.t; body : Expr.hook_free_t; env : env }
+    type clos = { self : Id.t option; param : Id.t; body : Expr.hook_free_t; env : env }
     [@@deriving sexp_of]
 
     type value =
