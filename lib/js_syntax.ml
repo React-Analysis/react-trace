@@ -213,14 +213,29 @@ let convert_seq ((e1, cpl1) : Syntax.Expr.hook_free_t * completion)
       (* e2 is never executed *)
       (e1, cpl1)
 
-let convert_repeat ((_body, _cpl) : Syntax.Expr.hook_free_t * completion) :
+let convert_cond
+  (test : Syntax.Expr.hook_free_t)
+  ((con, con_cpl) : Syntax.Expr.hook_free_t * completion)
+  ((alt, alt_cpl) : Syntax.Expr.hook_free_t * completion) :
     Syntax.Expr.hook_free_t * completion =
+  let cpl = merge_completion con_cpl alt_cpl in
+  let (con, alt) =
+    match cpl with
+    | CDet _ -> (con, alt)
+    | CIndet _ -> (wrap_cpl con_cpl con, wrap_cpl alt_cpl alt)
+  in
+  (Cond { pred = test; con; alt }, cpl)
+
+let convert_repeat _label ((_body, _cpl) : Syntax.Expr.hook_free_t * completion) :
+    Syntax.Expr.hook_free_t * completion =
+  (* use my repeat desugar *)
   raise NotImplemented (* TODAY TODO *)
 
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.hook_free_t * completion =
   let open Syntax.Expr in
-  let rec convert_stat (tail, tail_cpl)
+  let nop_pair = (Const Unit, CDet CNormal) in
+  let rec convert_stat_tail (tail, tail_cpl)
       ((_, stmt) : (Loc.t, Loc.t) Flow_ast.Statement.t) =
     let res = match stmt with
     | Block { body; _ } ->
@@ -241,8 +256,16 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     | DeclareTypeAlias _ | DeclareOpaqueType _ | DeclareVariable _ ->
         (* flow statements starting with 'declare' *)
         (tail, tail_cpl)
-    | DoWhile _ ->
-        raise NotImplemented (* TODAY TODO *)
+    | DoWhile { body; test; _ } ->
+        (* while and do while are symmetric *)
+        convert_repeat (LBreak None) (
+          convert_repeat (LContinue None) (
+            convert_seq
+            (convert_stat body)
+            (convert_cond
+              (convert_expr test)
+              nop_pair
+              (Const Unit, CDet (CBreak (LBreak None))))))
     | Empty _ -> (tail, tail_cpl)
     | EnumDeclaration _ -> raise NotImplemented
     | ExportDefaultDeclaration { declaration; _ } -> (
@@ -250,7 +273,7 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
         match declaration with
         | Declaration stmt ->
             (* delegate to var and function declaration *)
-            convert_stat (tail, tail_cpl) stmt
+            convert_stat_tail (tail, tail_cpl) stmt
         | Expression expr ->
             convert_seq (convert_expr expr, CDet CNormal) (tail, tail_cpl))
     | ExportNamedDeclaration { declaration; _ } -> (
@@ -259,7 +282,7 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
         match declaration with
         | Some stmt ->
             (* delegate to var and function declaration *)
-            convert_stat (tail, tail_cpl) stmt
+            convert_stat_tail (tail, tail_cpl) stmt
         | None -> (tail, tail_cpl))
     | Expression { expression; _ } ->
         let expr = convert_expr expression in
@@ -276,19 +299,12 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
             convert_seq (expr, CDet CNormal) (tail, tail_cpl))
     | If { test; consequent; alternate; _ } ->
         let test = convert_expr test in
-        let con, con_cpl = convert_stat (Const Unit, CDet CNormal) consequent in
-        let alt, alt_cpl =
-          match alternate with
-          | Some (_, { body; _ }) -> convert_stat (Const Unit, CDet CNormal) body
-          | None -> (Const Unit, CDet CNormal)
+        let con = convert_stat consequent in
+        let alt = match alternate with
+          | Some (_, { body; _ }) -> convert_stat body
+          | None -> nop_pair
         in
-        let cpl = merge_completion con_cpl alt_cpl in
-        let (con, alt) =
-          match cpl with
-          | CDet _ -> (con, alt)
-          | CIndet _ -> (wrap_cpl con_cpl con, wrap_cpl alt_cpl alt)
-        in
-        convert_seq (Cond { pred = test; con; alt }, cpl) (tail, tail_cpl)
+        convert_seq (convert_cond test con alt) (tail, tail_cpl)
     | ImportDeclaration _ -> raise NotImplemented
     | InterfaceDeclaration _ -> raise NotImplemented
     | Labeled _ ->
@@ -318,7 +334,16 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
           |> List.fold ~init:tail ~f:(fun tail (name, expr) ->
                  Let { id = name; bound = expr; body = tail }),
           tail_cpl )
-    | While _ -> raise NotImplemented (* TODAY TODO *)
+    | While { body; test; _ } ->
+        (* while and do while are symmetric *)
+        convert_repeat (LBreak None) (
+          convert_repeat (LContinue None) (
+            convert_seq
+            (convert_cond
+              (convert_expr test)
+              nop_pair
+              (Const Unit, CDet (CBreak (LBreak None))))
+            (convert_stat body)))
     | With _ -> raise NotImplemented
     in
     (*
@@ -327,8 +352,10 @@ let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     );
     *)
     res
+  and convert_stat (stmt : (Loc.t, Loc.t) Flow_ast.Statement.t) : Syntax.Expr.hook_free_t * completion =
+    convert_stat_tail nop_pair stmt
   in
-  let res = List.rev body |> List.fold ~init:(Const Unit, CDet CNormal) ~f:convert_stat in
+  let res = List.rev body |> List.fold ~init:nop_pair ~f:convert_stat_tail in
   (*
   print_endline ("convert_stat_list [" ^ (List.map body ~f:(fun (_, stmt) ->
     Flow_ast.Statement.show_t' Loc.pp Loc.pp stmt) |> String.concat ~sep:"; ") ^ "] = \n" ^
@@ -408,7 +435,9 @@ and convert_func ({ id; params; body; _ } : (Loc.t, Loc.t) Flow_ast.Function.t) 
                     };
               };
         }
-      else Fn { self; param = param_name; body }
+      else
+        (* TODO: is this correct? *)
+        Fn { self; param = param_name; body }
 
 and convert_call (callee : Syntax.Expr.hook_free_t)
     ((_, { arguments; _ }) : (Loc.t, Loc.t) Flow_ast.Expression.ArgList.t) :
