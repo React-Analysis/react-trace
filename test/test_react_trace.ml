@@ -535,11 +535,66 @@ let js_fn () =
 
 let js_rec () =
   let open Syntax in
-  let js, _ = parse_js "let f = (function(x) { return f(x); })" in
+  let js, _ = parse_js "let t = (function f(x) { return f(x); })" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert recursive function" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "let f = fun x -> f x in ()" |> Prog.sexp_of_t)
+    ~expected:(parse_prog "let t = (rec f = fun x -> f x) in ()" |> Prog.sexp_of_t)
+
+let js_while () =
+  let open Syntax in
+  let js, _ = parse_js "let a = true; let b = (function(x){}); while (a) { b(0) }" in
+  let prog = Js_syntax.convert js in
+  Alcotest.(check' (of_pp Sexp.pp_hum))
+    ~msg:"convert while" ~actual:(Prog.sexp_of_t prog)
+    ~expected:(parse_prog {|
+  let a = true in
+  let b = fun x -> () in
+  (rec Fbrk = fun Xbrk ->
+    let Cbrk = (rec Fcont = fun Xcont ->
+        let Ccont =
+          let Cif =
+            if a then
+              let Ctrue = {} in
+              Ctrue["tag"] := "NRM";
+              Ctrue
+            else
+              let Cfalse = {} in
+              Cfalse["tag"] := "BRK";
+              Cfalse["label"] := brk;
+              Cfalse
+          in
+          if Cif["tag"] = "NRM" then (
+            b 0;
+            let Cbody = {} in
+            Cbody["tag"] := "NRM";
+            Cbody
+          ) else
+            Cif
+        in
+        if  Ccont["tag"] = "BRK" &&
+            Ccont["label"] = "con" then
+          let CFnrm = {} in
+          CFnrm["tag"] := "NRM";
+          CFnrm
+        else if Ccont["tag"] = NRM then
+          Fcont ()
+        else
+          Ccont)
+      ()
+    in
+    if  Cbrk["tag"] = "BRK" &&
+        Cbrk["label"] = "brk" then
+      let CFnrm2 = {} in
+      CFnrm2["tag"] := "NRM";
+      CFnrm2
+    else if Cbrk["tag"] = "NRM" then
+      Fbrk ()
+    else Cbrk)
+  ()
+  |}
+      |> alpha_conv_prog Fun.id prog
+      |> Prog.sexp_of_t)
 
 let js_literal () =
   let open Syntax in
@@ -1044,6 +1099,7 @@ let () =
           test_case "var" `Quick js_var;
           test_case "function" `Quick js_fn;
           test_case "recursive function" `Quick js_rec;
+          test_case "while" `Quick js_while;
           test_case "literal" `Quick js_literal;
           test_case "jsx" `Quick js_jsx;
           test_case "binop" `Quick js_op;

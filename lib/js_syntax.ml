@@ -95,14 +95,12 @@ let expr_is_unit = function
   | Syntax.Expr.Const Syntax.Expr.Unit -> true
   | _ -> false
 
-(* return a wrapped expression that always returns a completion object *)
-let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
-    Syntax.Expr.hook_free_t =
+let cpl_literal_expr =
   let open Syntax.Expr in
-  match cpl with
-  | CDet CNormal ->
+  function
+  | (CNormal, None) ->
       let obj_var = fresh () in
-      let cpl_literal = Let
+      Let
             {
               id = obj_var;
               bound = Alloc;
@@ -116,11 +114,8 @@ let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
                       },
                     Var obj_var );
             }
-      in
-      if expr_is_unit expr then cpl_literal else Seq ( expr, cpl_literal )
-  | CDet CBreak label ->
+  | (CBreak label, None) ->
       let obj_var = fresh () in
-      let cpl_literal =
           Let
             {
               id = obj_var;
@@ -142,9 +137,7 @@ let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
                           },
                         Var obj_var ) );
             }
-      in
-      if expr_is_unit expr then cpl_literal else Seq ( expr, cpl_literal )
-  | CDet CReturn ->
+  | (CReturn, Some expr) ->
       let obj_var = fresh () in
             Let
               {
@@ -167,6 +160,18 @@ let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
                             },
                           Var obj_var ) );
               }
+  | _ -> raise (Invalid_argument "cpl_literal_expr : expr should be present iff CReturn is used")
+
+(* return a wrapped expression that always returns a completion object *)
+let wrap_cpl (cpl : completion) (expr : Syntax.Expr.hook_free_t) :
+    Syntax.Expr.hook_free_t =
+  let open Syntax.Expr in
+  match cpl with
+  | CDet ((CNormal | CBreak _) as cpl) ->
+      let cpl_literal = cpl_literal_expr (cpl, None) in
+      if expr_is_unit expr then cpl_literal else Seq ( expr, cpl_literal )
+  | CDet CReturn ->
+      cpl_literal_expr (CReturn, Some expr)
   | CIndet _ -> expr
 
 let convert_seq ((e1, cpl1) : Syntax.Expr.hook_free_t * completion)
@@ -226,10 +231,101 @@ let convert_cond
   in
   (Cond { pred = test; con; alt }, cpl)
 
-let convert_repeat _label ((_body, _cpl) : Syntax.Expr.hook_free_t * completion) :
+let convert_repeat label ((body, cpl) : Syntax.Expr.hook_free_t * completion) :
     Syntax.Expr.hook_free_t * completion =
   (* use my repeat desugar *)
-  raise NotImplemented (* TODAY TODO *)
+  let open Syntax.Expr in
+  match cpl with
+  | CDet CNormal ->
+      let func_name = fresh () in
+      let param_name = fresh () in
+      (
+        App {
+          fn = Fn {
+            self = Some func_name;
+            param = param_name;
+            body = Seq (
+              body,
+              App {
+                fn = Var func_name;
+                arg = Const Unit;
+              }
+            )
+          };
+          arg = Const Unit
+        }
+        ,
+        CDet CNormal (* TODO: replace with (CIndet []) ? *)
+      )
+  | CDet (CBreak label') when equal_label label label' ->
+      (body, CDet CNormal)
+  | CDet (CBreak _ | CReturn) ->
+      (body, cpl)
+  | CIndet cpls ->
+      let cpls' = cpls |> List.filter_map ~f:(fun cpl ->
+        match cpl with
+        | CNormal -> None
+        | (CBreak label') when equal_label label label' -> Some CNormal
+        | _ -> Some cpl
+      ) |> List.dedup_and_sort ~compare:compare_flat_completion
+      in
+      let func_name = fresh () in
+      let param_name = fresh () in
+      let cpl_name = fresh () in
+      (* (fix f x.
+          let c = <body> in
+          if c.tag = "BRK" && c.label = <label> then
+            { tag: "NRM" }
+          else if c.tag = "NRM" then
+            f x
+          else
+            c) () *)
+      (
+        App {
+          fn = Fn {
+            self = Some func_name;
+            param = param_name;
+            body =
+              Let {
+                id = cpl_name;
+                bound = body;
+                body =
+                  Cond {
+                    pred = Bop {
+                      op = And;
+                      left = Bop {
+                        op = Eq;
+                        left = Get { obj = Var cpl_name; idx = Const (String "tag") };
+                        right = Const (String "BRK");
+                      };
+                      right = Bop {
+                        op = Eq;
+                        left = Get { obj = Var cpl_name; idx = Const (String "label") };
+                        right = Const (String (string_of_label label));
+                      };
+                    };
+                    con = cpl_literal_expr (CNormal, None);
+                    alt =
+                      Cond {
+                        pred = Bop {
+                          op = Eq;
+                          left = Get { obj = Var cpl_name; idx = Const (String "tag") };
+                          right = Const (String "NRM");
+                        };
+                        con = App {
+                          fn = Var func_name;
+                          arg = Const Unit;
+                        };
+                        alt = Var cpl_name;
+                      }
+                  }
+              }
+          };
+          arg = Const Unit
+        }
+        ,
+        CIndet cpls'
+      )
 
 let rec convert_stat_list (body : (Loc.t, Loc.t) Flow_ast.Statement.t list) :
     Syntax.Expr.hook_free_t * completion =
