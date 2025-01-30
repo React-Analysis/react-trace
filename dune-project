@@ -24,7 +24,7 @@
  (depends
   ocaml
   (ocaml-base-compiler
-   (= 5.3.0~beta2))
+   (= 5.3.0))
   menhir
   dune
   base

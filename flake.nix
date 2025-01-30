@@ -20,7 +20,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         on = opam-nix.lib.${system};
         devPackagesQuery = {
-          ocaml-lsp-server = "1.20.0~5.3preview";
+          ocaml-lsp-server = "1.22.0";
           ocamlformat = "0.27.0";
           utop = "*";
           alcotest = "*";
