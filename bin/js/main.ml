@@ -33,10 +33,19 @@ let () =
           let Interp.{ recording; _ } =
             Interp.run
               ?fuel:(if fuel < 1 then None else Some fuel)
-              ~recorder:(module String_recorder)
+              ~recorder:(module Recorder)
               prog
           in
           if Logs.err_count () > 0 then Error "error" else Ok recording)
-         |> ( function Ok s -> s | Error s -> s )
-         |> Js.string
+         |> ( function
+         | Ok s ->
+             [|
+               ("log", s.log |> Js.string |> Js.Unsafe.inject);
+               ( "checkpoints",
+                 s.checkpoints
+                 |> Array.of_list_rev_map ~f:Js.string
+                 |> Js.array |> Js.Unsafe.inject );
+             |]
+         | Error s -> [| ("error", s |> Js.string |> Js.Unsafe.inject) |] )
+         |> Js.Unsafe.obj
     end)
