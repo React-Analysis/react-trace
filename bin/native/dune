@@ -1,0 +1,10 @@
+(executable
+ (public_name react_trace)
+ (name main)
+ (libraries
+  react_trace
+  report_box_recorder
+  base
+  logs.fmt
+  fmt.tty
+  printbox-text))

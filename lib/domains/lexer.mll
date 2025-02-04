@@ -4,6 +4,7 @@ open Parser
 
 exception SyntaxError of string
 
+(* TODO: Use String_dict *)
 let keywords =
   let tbl : (string, token) Hashtbl.t = Hashtbl.create 10 in
   let add_to_tbl (id, tok) = Hashtbl.add tbl id tok in
@@ -14,7 +15,7 @@ let keywords =
       ("not", NOT);
       ("view", VIEW);
       ("fun", FUN);
-      ("rec", REC);
+      (* ("rec", REC); *)
       ("if", IF);
       ("then", THEN);
       ("else", ELSE);

@@ -1,0 +1,3 @@
+(library
+ (name recorder_intf)
+ (libraries base))

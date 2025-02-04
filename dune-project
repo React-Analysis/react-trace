@@ -23,18 +23,22 @@
  (description "ReacttRace is a tool for analyzing React programs.")
  (depends
   ocaml
-  dune
   (ocaml-base-compiler
-   (= 5.2.0))
-  core
-  flow_parser
+   (= 5.3.0))
+  menhir
+  dune
+  base
+  stdio
+  ppx_jane
+  js_of_ocaml
+  js_of_ocaml-ppx
+  (flow_parser (>= 0.257.0))
+  (printbox
+   (>= 0.12))
+  (printbox-text
+   (>= 0.12))
   fmt
   logs
-  menhir
-  ppx_jane
-  printbox
-  printbox-text
-  stdio
   (alcotest :with-test))
  (tags
   (React "Static Analysis")))

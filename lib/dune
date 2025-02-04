@@ -1,11 +1,5 @@
 (library
  (name react_trace)
+ (libraries recorder_intf base logs flow_parser lib_domains)
  (preprocess
-  (pps ppx_jane))
- (libraries core logs flow_parser ppx_jane printbox printbox-text))
-
-(ocamllex lexer)
-
-(menhir
- (modules parser)
- (flags --dump))
+  (pps ppx_compare)))

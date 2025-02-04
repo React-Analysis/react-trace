@@ -1,4 +1,4 @@
-open! Core
+open! Base
 
 let pad_or_truncate (lst : 'a list) ~(len : int) : 'a option list =
   let open List in

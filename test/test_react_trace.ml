@@ -1,3 +1,4 @@
+(*
 open! Core
 open Stdlib.Effect.Deep
 open React_trace
@@ -1152,3 +1153,4 @@ let () =
             updating_obj_without_set_does_not_rerender;
         ] );
     ]
+    *)

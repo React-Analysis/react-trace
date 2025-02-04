@@ -1,2 +1,3 @@
 profile = default
 wrap-comments = true
+ocaml-version = 5.3

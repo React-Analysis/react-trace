@@ -1,0 +1,3 @@
+(library
+ (name recorder)
+ (libraries react_trace base))

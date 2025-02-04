@@ -1,4 +1,4 @@
-open! Core
+open! Base
 open Syntax
 
 module type T = sig

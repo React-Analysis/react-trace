@@ -1,0 +1,11 @@
+(library
+ (name lib_domains)
+ (preprocess
+  (pps ppx_jane))
+ (libraries base logs ppx_jane))
+
+(ocamllex lexer)
+
+(menhir
+ (modules parser)
+ (flags --dump))

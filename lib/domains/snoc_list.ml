@@ -1,4 +1,4 @@
-open! Core
+open! Base
 
 type 'a t = [] | Snoc of 'a t * 'a
 
