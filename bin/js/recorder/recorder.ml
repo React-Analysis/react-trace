@@ -14,12 +14,35 @@ let get_path_from_checkpoint = function
     ->
       pt
 
-type entry = { msg : string }
+type tree = { path : string; name : string; children : tree list }
+and entry = { msg : string; tree : tree }
 
 and recording = { checkpoints : entry list; log : string }
 [@@deriving yojson_of]
 
-let emp_recording = { checkpoints = []; log = "= Recording =\n" }
+let emp_recording = { checkpoints = []; log = "" }
+let leaf_null () : tree = { path = ""; name = "()"; children = [] }
+
+let leaf_int (i : int) : tree =
+  { path = ""; name = Int.to_string i; children = [] }
+
+let rec tree : Concrete_domains.tree -> tree = function
+  | Leaf_null -> leaf_null ()
+  | Leaf_int i -> leaf_int i
+  | Path p -> path p
+
+and path (pt : Path.t) : tree =
+  let { part_view; children } = perform (Lookup_ent pt) in
+  let name =
+    match part_view with
+    | Root -> "Root"
+    | Node node -> node.comp_spec.comp.name
+  in
+  {
+    path = pt |> Path.sexp_of_t |> Sexp.to_string;
+    name;
+    children = children |> Snoc_list.to_list |> List.map ~f:tree;
+  }
 
 let event_h (type a b) (f : a -> b) (x : a) :
     recording:recording -> b * recording =
@@ -82,15 +105,16 @@ let event_h (type a b) (f : a -> b) (x : a) :
         continue k path ~recording
   | effect Checkpoint { msg; checkpoint }, k ->
       fun ~recording ->
-        let root = perform Get_root_pt in
         let pt = get_path_from_checkpoint checkpoint in
         let msg =
-          Printf.sprintf "[%s/%s] %s"
-            (Sexp.to_string (Path.sexp_of_t pt))
-            (Sexp.to_string (Path.sexp_of_t root))
-            msg
+          Printf.sprintf "[%s] %s" (Sexp.to_string (Path.sexp_of_t pt)) msg
         in
+        let root = perform Get_root_pt in
+        let tree = path root in
         let recording =
-          { recording with checkpoints = { msg } :: recording.checkpoints }
+          {
+            recording with
+            checkpoints = { msg; tree } :: recording.checkpoints;
+          }
         in
         continue k () ~recording
