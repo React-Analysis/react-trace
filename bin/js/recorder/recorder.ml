@@ -1,6 +1,7 @@
 open! Base
 open Stdlib.Effect
 open Stdlib.Effect.Deep
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
 open React_trace
 open Lib_domains
 open Concrete_domains
@@ -14,7 +15,9 @@ let get_path_from_checkpoint = function
       pt
 
 type entry = { msg : string }
-type recording = { checkpoints : entry list; log : string }
+
+and recording = { checkpoints : entry list; log : string }
+[@@deriving yojson_of]
 
 let emp_recording = { checkpoints = []; log = "= Recording =\n" }
 

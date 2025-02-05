@@ -23,6 +23,8 @@ depends: [
   "printbox-text" {>= "0.12"}
   "fmt"
   "logs"
+  "yojson"
+  "ppx_yojson_conv"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

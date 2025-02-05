@@ -39,6 +39,8 @@
    (>= 0.12))
   fmt
   logs
+  yojson
+  ppx_yojson_conv
   (alcotest :with-test))
  (tags
   (React "Static Analysis")))
