@@ -13,7 +13,8 @@ let get_path_from_checkpoint = function
     ->
       pt
 
-type recording = { checkpoints : string list; log : string }
+type entry = { msg : string }
+type recording = { checkpoints : entry list; log : string }
 
 let emp_recording = { checkpoints = []; log = "= Recording =\n" }
 
@@ -78,15 +79,15 @@ let event_h (type a b) (f : a -> b) (x : a) :
         continue k path ~recording
   | effect Checkpoint { msg; checkpoint }, k ->
       fun ~recording ->
+        let root = perform Get_root_pt in
         let pt = get_path_from_checkpoint checkpoint in
+        let msg =
+          Printf.sprintf "[%s/%s] %s"
+            (Sexp.to_string (Path.sexp_of_t pt))
+            (Sexp.to_string (Path.sexp_of_t root))
+            msg
+        in
         let recording =
-          {
-            recording with
-            checkpoints =
-              Printf.sprintf "[path %s] %s"
-                (Sexp.to_string (Path.sexp_of_t pt))
-                msg
-              :: recording.checkpoints;
-          }
+          { recording with checkpoints = { msg } :: recording.checkpoints }
         in
         continue k () ~recording

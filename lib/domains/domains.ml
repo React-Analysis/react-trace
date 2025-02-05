@@ -143,6 +143,7 @@ module type Tree_mem = sig
   val alloc_pt : t -> path
   val lookup_ent : t -> path:path -> entry
   val update_ent : t -> path:path -> entry -> t
+  val root_pt : t -> path
   val sexp_of_t : t -> Sexp.t
 end
 

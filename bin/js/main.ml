@@ -22,7 +22,7 @@ let parse_program_str (program_str : string) : (Syntax.Prog.t, string) Result.t
 let () =
   Fmt_tty.setup_std_outputs ();
   Logs.set_reporter (Logs_fmt.reporter ());
-  Logs.set_level (Some Logs.Info);
+  Logs.set_level (Some Logs.Error);
 
   let open Js_of_ocaml in
   Js.export_all
@@ -43,7 +43,8 @@ let () =
                ("log", s.log |> Js.string |> Js.Unsafe.inject);
                ( "checkpoints",
                  s.checkpoints
-                 |> Array.of_list_rev_map ~f:Js.string
+                 |> Array.of_list_rev_map ~f:(fun { Recorder.msg } ->
+                        Js.string msg)
                  |> Js.array |> Js.Unsafe.inject );
              |]
          | Error s -> [| ("error", s |> Js.string |> Js.Unsafe.inject) |] )

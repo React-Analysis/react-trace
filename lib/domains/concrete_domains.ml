@@ -163,6 +163,10 @@ module M : Domains.S = struct
           Map.set tree_mem ~key:path
             ~data:{ entry with part_view = Node { n with eff_q } }
 
+    let root_pt (tree_mem : t) =
+      ignore tree_mem;
+      0
+
     let alloc_pt = Map.length
     let lookup_ent tree_mem ~path = Map.find_exn tree_mem path
 

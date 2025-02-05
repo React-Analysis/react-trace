@@ -35,6 +35,9 @@ type _ eff +=
   | Lookup_ent : Path.t -> entry eff
   | Update_ent : Path.t * entry -> unit eff
 
+(* tree memory effects for instrumentation *)
+type _ eff += Get_root_pt : Path.t eff
+
 type checkpoint =
   | Retry_start of (int * Path.t)
   | Render_check of Path.t

@@ -105,6 +105,9 @@ let treemem_h (type a b) (f : a -> b) (x : a) :
       fun ~treemem ->
         Logger.treemem treemem (`Update_ent (path, ent));
         continue k () ~treemem:(Tree_mem.update_ent treemem ~path ent)
+  (* NOTE: instrumentation *)
+  | effect Get_root_pt, k ->
+      fun ~treemem -> continue k (Tree_mem.root_pt treemem) ~treemem
 
 let value_exn exn v =
   Option.value_exn v ~error:(Error.of_exn exn ~backtrace:`Get)
