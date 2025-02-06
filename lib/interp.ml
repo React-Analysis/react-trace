@@ -312,7 +312,7 @@ let mount_tree (path : Path.t) ?(idx : int option) (tree : tree) : unit =
 let rec render (path : Path.t) (vss : view_spec list) : unit =
   Logger.render path vss;
   perform (Checkpoint { msg = "Render"; checkpoint = Render_check path });
-  List.iter vss ~f:(alloc_child_and_render1 path);
+  List.iter vss ~f:(render_child path);
   perform (Checkpoint { msg = "Rendered"; checkpoint = Render_finish path })
 
 and render1 (vs : view_spec) (t : tree) : unit =
@@ -329,8 +329,7 @@ and render1 (vs : view_spec) (t : tree) : unit =
       render path vss
   | _, _ -> assert false
 
-and alloc_child_and_render1 (path : Path.t) ?(idx : int option) (vs : view_spec)
-    : unit =
+and render_child (path : Path.t) ?(idx : int option) (vs : view_spec) : unit =
   let t = alloc_tree vs in
   mount_tree path ?idx t;
   render1 vs t
@@ -409,10 +408,10 @@ and reconcile1 (path : Path.t) (idx : int) (old_tree : tree option)
           if Id.(name = name') then
             update1 t (if Value.(arg = arg') then None else Some arg)
           else (
-            alloc_child_and_render1 path ~idx vs;
+            render_child path ~idx vs;
             true))
   | _, vs ->
-      alloc_child_and_render1 path ~idx vs;
+      render_child path ~idx vs;
       true
 
 let rec commit_effs (path : Path.t) : unit =
