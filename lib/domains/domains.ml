@@ -139,6 +139,7 @@ module type Tree_mem = sig
   val update_st : t -> path:path -> label:Label.t -> value * job_q -> t
   val get_dec : t -> path:path -> decision
   val set_dec : t -> path:path -> decision -> t
+  val set_arg : t -> path:path -> value -> t
   val enq_eff : t -> path:path -> clos -> t
   val alloc_pt : t -> path
   val lookup_ent : t -> path:path -> entry

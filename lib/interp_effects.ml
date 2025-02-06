@@ -27,6 +27,7 @@ type _ eff +=
   | Update_st : (Path.t * Label.t * (value * Job_q.t)) -> unit eff
   | Get_dec : Path.t -> decision eff
   | Set_dec : Path.t * decision -> unit eff
+  | Set_arg : Path.t * value -> unit eff
   | Enq_eff : Path.t * clos -> unit eff
 
 (* tree memory effects in render *)

@@ -68,20 +68,14 @@ and path (pt : Path.t) : B.t =
   in
   B.(vlist [ part_view_box; children ] |> frame)
 
-(* TODO: Extract this function to a common module *)
-let get_path_from_checkpoint = function
-  | Retry_start (_, pt) | Render_check pt | Render_finish pt | Effects_finish pt
-    ->
-      pt
-
 let emp_recording = []
 
 let event_h (type a b) (f : a -> b) (x : a) :
     recording:recording -> b * recording =
   match f x with
   | v -> fun ~recording -> (v, recording)
-  | effect Checkpoint { msg; checkpoint }, k ->
+  | effect Checkpoint { msg; _ }, k ->
       fun ~recording ->
-        let pt = get_path_from_checkpoint checkpoint in
-        let box = path pt in
+        let root = perform Get_root_pt in
+        let box = path root in
         continue k () ~recording:((msg, box) :: recording)

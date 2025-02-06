@@ -8,7 +8,6 @@ open Concrete_domains
 open Interp_effects
 include Recorder_intf
 
-(* TODO: Extract this function to a common module *)
 let get_path_from_checkpoint = function
   | Retry_start (_, pt) | Render_check pt | Render_finish pt | Effects_finish pt
     ->

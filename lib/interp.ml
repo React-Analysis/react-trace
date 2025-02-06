@@ -88,6 +88,10 @@ let treemem_h (type a b) (f : a -> b) (x : a) :
       fun ~treemem ->
         Logger.treemem treemem (`Set_dec (path, dec));
         continue k () ~treemem:(Tree_mem.set_dec treemem ~path dec)
+  | effect Set_arg (path, arg), k ->
+      fun ~treemem ->
+        Logger.treemem treemem (`Set_arg (path, arg));
+        continue k () ~treemem:(Tree_mem.set_arg treemem ~path arg)
   | effect Enq_eff (path, clos), k ->
       fun ~treemem ->
         Logger.treemem treemem (`Enq_eff (path, clos));
@@ -275,43 +279,57 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
       ptph_h ~ptph:(path, P_retry) (eval_mult ~re_render) expr
   | Idle | Update -> v
 
+let alloc_child (path : Path.t) ?(idx : int option) (vs : view_spec) : tree =
+  Logger.alloc vs;
+  let t =
+    match vs with
+    | Vs_null -> Leaf_null
+    | Vs_int i -> Leaf_int i
+    | Vs_comp comp_spec ->
+        let pt = perform Alloc_pt in
+        let part_view =
+          Node
+            {
+              comp_spec;
+              dec = Idle;
+              st_store = St_store.empty;
+              eff_q = Job_q.empty;
+            }
+        in
+        perform (Update_ent (pt, { part_view; children = [] }));
+        Path pt
+  in
+  let ({ children; _ } as ent) = perform (Lookup_ent path) in
+  let children =
+    let open Snoc_list in
+    match idx with None -> children ||> t | Some i -> replace children i t
+  in
+  perform (Update_ent (path, { ent with children }));
+  t
+
 let rec render (path : Path.t) (vss : view_spec list) : unit =
   Logger.render path vss;
   perform (Checkpoint { msg = "Render"; checkpoint = Render_check path });
-  List.iter vss ~f:(fun vs ->
-      let t = render1 vs in
-      (* refetch the whole entry, as the children may have updated the parent *)
-      let ({ children; _ } as ent) = perform (Lookup_ent path) in
-      perform
-        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) })));
+  List.iter vss ~f:(alloc_child_and_render1 path);
   perform (Checkpoint { msg = "Rendered"; checkpoint = Render_finish path })
 
-and render1 (vs : view_spec) : tree =
+and render1 (vs : view_spec) (t : tree) : unit =
   Logger.render1 vs;
-  match vs with
-  | Vs_null -> Leaf_null
-  | Vs_int i -> Leaf_int i
-  | Vs_comp ({ comp = { param; body; _ }; env; arg } as comp_spec) ->
-      let path = perform Alloc_pt
-      and env = Env.extend env ~id:param ~value:arg
-      and part_view =
-        Node
-          {
-            comp_spec;
-            dec = Idle;
-            st_store = St_store.empty;
-            eff_q = Job_q.empty;
-          }
-      in
-      perform (Update_ent (path, { part_view; children = [] }));
-
+  match (vs, t) with
+  | Vs_null, Leaf_null -> ()
+  | Vs_int i, Leaf_int i' when i = i' -> ()
+  | Vs_comp { comp = { param; body; _ }; env; arg }, Path path ->
+      let env = Env.extend env ~id:param ~value:arg in
       let vss =
         (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_init)) body
         |> vss_of_value_exn
       in
-      render path vss;
+      render path vss
+  | _, _ -> assert false
 
-      Path path
+and alloc_child_and_render1 (path : Path.t) ?(idx : int option) (vs : view_spec)
+    : unit =
+  alloc_child path ?idx vs |> render1 vs
 
 let rec update (path : Path.t) (arg : value option) : bool =
   Logger.update path;
@@ -330,9 +348,9 @@ let rec update (path : Path.t) (arg : value option) : bool =
         (* NOTE: Invariant: if arg is Some _, then it is different from arg' *)
         | Idle, Some _ | Update, _ ->
             perform (Set_dec (path, Idle));
-            let env =
-              Env.extend env ~id:param ~value:(Option.value arg ~default:arg')
-            in
+            let arg = Option.value arg ~default:arg' in
+            perform (Set_arg (path, arg));
+            let env = Env.extend env ~id:param ~value:arg in
             let vss =
               (eval_mult |> env_h ~env |> ptph_h ~ptph:(path, P_update)) body
               |> vss_of_value_exn
@@ -347,8 +365,10 @@ let rec update (path : Path.t) (arg : value option) : bool =
                younger sibling are. That's why we are resetting the children
                list and then snoc each child again in the reconcile function. We
                should verify this behavior. *)
-            let ent = perform (Lookup_ent path) in
-            perform (Update_ent (path, { ent with children = [] }));
+            (* NOTE: We don't do this any more, since we are modelling as an
+               'in-place' update now *)
+            (*let ent = perform (Lookup_ent path) in*)
+            (*perform (Update_ent (path, { ent with children = [] }));*)
             let updated = reconcile path old_trees vss in
             let dec = perform (Get_dec path) in
             updated || Decision.(dec <> Idle))
@@ -368,27 +388,28 @@ and update1 (t : tree) (arg : value option) : bool =
 and reconcile (path : Path.t) (old_trees : tree option list)
     (vss : view_spec list) : bool =
   Logger.reconcile path old_trees vss;
-  List.fold2_exn old_trees vss ~init:false ~f:(fun acc old_tree vs ->
-      let updated, t = reconcile1 old_tree vs in
-      let ({ children; _ } as ent) = perform (Lookup_ent path) in
-      perform
-        (Update_ent (path, { ent with children = Snoc_list.(children ||> t) }));
-      acc || updated)
+  Util.fold2i_exn old_trees vss ~init:false ~f:(fun idx acc old_tree vs ->
+      acc || reconcile1 path idx old_tree vs)
 
-and reconcile1 (old_tree : tree option) (vs : view_spec) : bool * tree =
+and reconcile1 (path : Path.t) (idx : int) (old_tree : tree option)
+    (vs : view_spec) : bool =
   Logger.reconcile1 old_tree vs;
   match (old_tree, vs) with
-  | Some (Leaf_null as t), Vs_null -> (false, t)
-  | Some (Leaf_int i as t), Vs_int j when i = j -> (false, t)
+  | Some Leaf_null, Vs_null -> false
+  | Some (Leaf_int i), Vs_int j when i = j -> false
   | Some (Path pt as t), (Vs_comp { comp = { name; _ }; arg; _ } as vs) -> (
       let { part_view; _ } = perform (Lookup_ent pt) in
       match part_view with
       | Root -> assert false
       | Node { comp_spec = { comp = { name = name'; _ }; arg = arg'; _ }; _ } ->
           if Id.(name = name') then
-            (update1 t (if Value.(arg = arg') then None else Some arg), t)
-          else (true, render1 vs))
-  | _, vs -> (true, render1 vs)
+            update1 t (if Value.(arg = arg') then None else Some arg)
+          else (
+            alloc_child_and_render1 path ~idx vs;
+            true))
+  | _, vs ->
+      alloc_child_and_render1 path ~idx vs;
+      true
 
 let rec commit_effs (path : Path.t) : unit =
   Logger.commit_effs path;

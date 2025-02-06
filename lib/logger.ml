@@ -77,6 +77,11 @@ let treemem treemem = function
           m "treemem_h Set_dec [treemem: %a, path: %a, dec: %a]" Sexp.pp_hum
             (Tree_mem.sexp_of_t treemem)
             Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum (sexp_of_decision dec))
+  | `Set_arg (path, arg) ->
+      Logs.debug (fun m ->
+          m "treemem_h Set_arg [treemem: %a, path: %a, arg: %a]" Sexp.pp_hum
+            (Tree_mem.sexp_of_t treemem)
+            Sexp.pp_hum (Path.sexp_of_t path) Sexp.pp_hum (sexp_of_value arg))
   | `Enq_eff (path, clos) ->
       Logs.debug (fun m ->
           m "treemem_h Enq_eff [treemem: %a, path: %a, clos: %a]" Sexp.pp_hum
@@ -102,6 +107,9 @@ let eval expr =
 
 let eval_mult expr =
   Logs.debug (fun m -> m "eval_mult %a" Sexp.pp_hum (Expr.sexp_of_t expr))
+
+let alloc vs =
+  Logs.debug (fun m -> m "alloc [vs: %a]" Sexp.pp (sexp_of_view_spec vs))
 
 let render path vss =
   Logs.debug (fun m ->
