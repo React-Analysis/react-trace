@@ -279,33 +279,35 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
       ptph_h ~ptph:(path, P_retry) (eval_mult ~re_render) expr
   | Idle | Update -> v
 
-let alloc_child (path : Path.t) ?(idx : int option) (vs : view_spec) : tree =
-  Logger.alloc vs;
-  let t =
-    match vs with
-    | Vs_null -> Leaf_null
-    | Vs_int i -> Leaf_int i
-    | Vs_comp comp_spec ->
-        let pt = perform Alloc_pt in
-        let part_view =
-          Node
-            {
-              comp_spec;
-              dec = Idle;
-              st_store = St_store.empty;
-              eff_q = Job_q.empty;
-            }
-        in
-        perform (Update_ent (pt, { part_view; children = [] }));
-        Path pt
-  in
+let alloc_tree (vs : view_spec) : tree =
+  Logger.alloc_tree vs;
+  match vs with
+  | Vs_null -> Leaf_null
+  | Vs_int i -> Leaf_int i
+  | Vs_comp comp_spec ->
+      let pt = perform Alloc_pt in
+      let part_view =
+        Node
+          {
+            comp_spec;
+            dec = Idle;
+            st_store = St_store.empty;
+            eff_q = Job_q.empty;
+          }
+      in
+      perform (Update_ent (pt, { part_view; children = [] }));
+      Path pt
+
+let mount_tree (path : Path.t) ?(idx : int option) (tree : tree) : unit =
+  Logger.mount_tree path ?idx tree;
   let ({ children; _ } as ent) = perform (Lookup_ent path) in
   let children =
     let open Snoc_list in
-    match idx with None -> children ||> t | Some i -> replace children i t
+    match idx with
+    | None -> children ||> tree
+    | Some i -> replace children i tree
   in
-  perform (Update_ent (path, { ent with children }));
-  t
+  perform (Update_ent (path, { ent with children }))
 
 let rec render (path : Path.t) (vss : view_spec list) : unit =
   Logger.render path vss;
@@ -329,7 +331,9 @@ and render1 (vs : view_spec) (t : tree) : unit =
 
 and alloc_child_and_render1 (path : Path.t) ?(idx : int option) (vs : view_spec)
     : unit =
-  alloc_child path ?idx vs |> render1 vs
+  let t = alloc_tree vs in
+  mount_tree path ?idx t;
+  render1 vs t
 
 let rec update (path : Path.t) (arg : value option) : bool =
   Logger.update path;
