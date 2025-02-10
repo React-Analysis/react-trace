@@ -2,7 +2,14 @@ open! Base
 open React_trace
 open Lib_domains
 
-let fuel = 100
+let max_fuel = 100
+
+let run prog =
+  let open Interp in
+  let { steps; _ } =
+    run ~fuel:max_fuel ~recorder:(module Default_recorder) prog
+  in
+  steps
 
 let parse_prog s =
   let lexbuf = Lexing.from_string s in
@@ -421,51 +428,51 @@ let js_while () =
     ~expected:
       (parse_prog
          {|
-  let a = true in
-  let b = fun x -> () in
-  (rec Fbrk = fun Xbrk ->
-    let Cbrk = (rec Fcont = fun Xcont ->
-        let Ccont =
-          let Cif =
-            if a then
-              let Ctrue = {} in
-              Ctrue["tag"] := "NRM";
-              Ctrue
-            else
-              let Cfalse = {} in
-              Cfalse["tag"] := "BRK";
-              Cfalse["label"] := brk;
-              Cfalse
-          in
-          if Cif["tag"] = "NRM" then (
-            b 0;
-            let Cbody = {} in
-            Cbody["tag"] := "NRM";
-            Cbody
-          ) else
-            Cif
+let a = true in
+let b = fun x -> () in
+(rec Fbrk = fun Xbrk ->
+  let Cbrk = (rec Fcont = fun Xcont ->
+      let Ccont =
+        let Cif =
+          if a then
+            let Ctrue = {} in
+            Ctrue["tag"] := "NRM";
+            Ctrue
+          else
+            let Cfalse = {} in
+            Cfalse["tag"] := "BRK";
+            Cfalse["label"] := brk;
+            Cfalse
         in
-        if  Ccont["tag"] = "BRK" &&
-            Ccont["label"] = "con" then
-          let CFnrm = {} in
-          CFnrm["tag"] := "NRM";
-          CFnrm
-        else if Ccont["tag"] = NRM then
-          Fcont ()
-        else
-          Ccont)
-      ()
-    in
-    if  Cbrk["tag"] = "BRK" &&
-        Cbrk["label"] = "brk" then
-      let CFnrm2 = {} in
-      CFnrm2["tag"] := "NRM";
-      CFnrm2
-    else if Cbrk["tag"] = "NRM" then
-      Fbrk ()
-    else Cbrk)
-  ()
-  |}
+        if Cif["tag"] = "NRM" then (
+          b 0;
+          let Cbody = {} in
+          Cbody["tag"] := "NRM";
+          Cbody
+        ) else
+          Cif
+      in
+      if  Ccont["tag"] = "BRK" &&
+          Ccont["label"] = "con" then
+        let CFnrm = {} in
+        CFnrm["tag"] := "NRM";
+        CFnrm
+      else if Ccont["tag"] = NRM then
+        Fcont ()
+      else
+        Ccont)
+    ()
+  in
+  if  Cbrk["tag"] = "BRK" &&
+      Cbrk["label"] = "brk" then
+    let CFnrm2 = {} in
+    CFnrm2["tag"] := "NRM";
+    CFnrm2
+  else if Cbrk["tag"] = "NRM" then
+    Fbrk ()
+  else Cbrk)
+()
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_literal () =
@@ -495,7 +502,8 @@ let js_op () =
 a || b; a && b; a ?? b;
 a === b; a !== b; a < b; a <= b; a > b; a >= b;
 a + b; a - b; a * b;
-void a; -a; +a; !a|}
+void a; -a; +a; !a
+|}
   in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
@@ -508,7 +516,8 @@ void a; -a; +a; !a|}
 (let a''' = a in if a''' = () then b else a''');
 a = b; a <> b; a < b; a <= b; a > b; a >= b;
 a + b; a - b; a * b;
-(a; ()); -a; +a; not a|}
+(a; ()); -a; +a; not a
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_optcall () =
@@ -548,7 +557,8 @@ let js_pattern_object () =
 let q' = q in
 let x = q'["x"] in
 let y = q'["y"] in
-()|}
+()
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_pattern_array () =
@@ -564,7 +574,8 @@ let q' = q in
   let x = q'[0] in
   let y = q'[1] in
   let z = q'[3] in
-()|}
+()
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_pattern_nested () =
@@ -581,7 +592,8 @@ let x = q'["x"] in
 let y = x["y"] in
 let a = y[0] in
 let b = y[1] in
-()|}
+()
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_object () =
@@ -593,7 +605,8 @@ let js_object () =
     ~expected:
       (parse_prog
          {|
-let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]|}
+let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_if_cpl_same () =
@@ -603,11 +616,10 @@ let js_if_cpl_same () =
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert conditional with same completion"
     ~actual:(Prog.sexp_of_t prog)
-    ~expected:
-      (parse_prog {|
-      if a then ()
-      else ()
-    |} |> Prog.sexp_of_t)
+    ~expected:(parse_prog {|
+if a then ()
+else ()
+|} |> Prog.sexp_of_t)
 
 let js_if_cpl_brk_brk () =
   let open Syntax in
@@ -619,9 +631,9 @@ let js_if_cpl_brk_brk () =
     ~expected:
       (parse_prog
          {|
-      if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
-      else (let obj2 = {} in obj2["tag"] := "BRK"; obj2["label"] := "brk:B"; obj2)
-    |}
+if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
+else (let obj2 = {} in obj2["tag"] := "BRK"; obj2["label"] := "brk:B"; obj2)
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_if_cpl_brk_nrm () =
@@ -634,9 +646,9 @@ let js_if_cpl_brk_nrm () =
     ~expected:
       (parse_prog
          {|
-      if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
-      else (b; let obj2 = {} in obj2["tag"] := "NRM"; obj2)
-    |}
+if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
+else (b; let obj2 = {} in obj2["tag"] := "NRM"; obj2)
+|}
       |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let no_side_effect () =
@@ -650,7 +662,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_body_nonterminate () =
@@ -666,10 +678,7 @@ view [C ()]
 |}
   in
   let run () =
-    Interp.re_render_limit_h
-      (Interp.run ~fuel ~recorder:(module Default_recorder))
-      prog ~re_render_limit:25
-    |> ignore
+    Interp.re_render_limit_h run prog ~re_render_limit:25 |> ignore
   in
   Alcotest.(check_raises)
     "retry indefintely" Interp_effects.Too_many_re_renders run
@@ -686,7 +695,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_step_one_time () =
@@ -701,7 +710,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:1 ~actual:steps
 
 let set_in_effect_step_two_times () =
@@ -716,7 +725,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_step_indefinitely () =
@@ -731,8 +740,8 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
-  Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
+  let steps = run prog in
+  Alcotest.(check' int) ~msg:"step indefintely" ~expected:max_fuel ~actual:steps
 
 let set_in_effect_guarded_step_two_times () =
   let prog =
@@ -746,7 +755,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_guarded_step_n_times () =
@@ -761,7 +770,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
 let set_in_effect_with_arg_step_one_time () =
@@ -776,7 +785,7 @@ let C x =
 view [C 42]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_with_arg_step_two_times () =
@@ -791,7 +800,7 @@ let C x =
 view [C 0]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_two_times () =
@@ -809,7 +818,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_indefinitely () =
@@ -827,8 +836,8 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
-  Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
+  let steps = run prog in
+  Alcotest.(check' int) ~msg:"step indefintely" ~expected:max_fuel ~actual:steps
 
 let set_in_effect_twice_step_one_time () =
   let prog =
@@ -842,7 +851,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_removed_child_step_two_times () =
@@ -865,7 +874,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let state_persists_in_child () =
@@ -888,7 +897,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let new_child_steps_again () =
@@ -911,7 +920,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
 
 let set_in_effect_guarded_step_n_times_with_obj () =
@@ -926,7 +935,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
 let updating_obj_without_set_does_not_rerender () =
@@ -941,7 +950,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
+  let steps = run prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let () =
