@@ -8,7 +8,14 @@ module type T = sig
   type obj
   type st_store
   type job_q
-  type clos = { self : Id.t option; param : Id.t; body : Expr.hook_free_t; env : env }
+
+  type clos = {
+    self : Id.t option;
+    param : Id.t;
+    body : Expr.hook_free_t;
+    env : env;
+  }
+
   type set_clos = { label : Label.t; path : path }
   type comp_clos = { comp : Prog.comp; env : env }
 

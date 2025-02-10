@@ -124,17 +124,17 @@ module Env = struct
 end
 
 let build_app_env (clos_value : clos) (arg : value) : Env.t =
-  (*
-  The function name is bound before the parameters,
-  according to js semantics (ECMA-262 14th edition, p.347, "15.2.5 Runtime Semantics: InstantiateOrdinaryFunctionExpression":
-  "5. Perform ! funcEnv.CreateImmutableBinding(name, false).").
-   *)
+  (* The function name is bound before the parameters, according to js semantics
+     (ECMA-262 14th edition, p.347, "15.2.5 Runtime Semantics:
+     InstantiateOrdinaryFunctionExpression": "5. Perform !
+     funcEnv.CreateImmutableBinding(name, false)."). *)
   let { self; param; body = _; env } = clos_value in
-  let env = match self with
-  | None -> env
-  | Some self -> Env.extend env ~id:self ~value:(Clos clos_value)
+  let env =
+    match self with
+    | None -> env
+    | Some self -> Env.extend env ~id:self ~value:(Clos clos_value)
   in
-  let env = Env.extend env ~id:param ~value:(arg) in
+  let env = Env.extend env ~id:param ~value:arg in
   env
 
 let rec eval : type a. a Expr.t -> value =

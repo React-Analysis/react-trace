@@ -63,7 +63,12 @@ module Expr = struct
     | Const : const -> _ desc
     | Var : Id.t -> _ desc
     | View : hook_free t list -> _ desc
-    | Cond : { pred : hook_free t; con : hook_free t; alt : hook_free t } -> _ desc
+    | Cond : {
+        pred : hook_free t;
+        con : hook_free t;
+        alt : hook_free t;
+      }
+        -> _ desc
     | Fn : { self : Id.t option; param : Id.t; body : hook_free t } -> _ desc
     | App : { fn : hook_free t; arg : hook_free t } -> _ desc
     | Let : { id : Id.t; bound : hook_free t; body : 'a t } -> 'a desc
@@ -81,7 +86,12 @@ module Expr = struct
     | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ desc
     | Alloc : _ desc
     | Get : { obj : hook_free t; idx : hook_free t } -> _ desc
-    | Set : { obj : hook_free t; idx : hook_free t; value : hook_free t } -> _ desc
+    | Set : {
+        obj : hook_free t;
+        idx : hook_free t;
+        value : hook_free t;
+      }
+        -> _ desc
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
@@ -159,7 +169,10 @@ module Expr = struct
     | Times -> "*"
 
   let rec sexp_of_t : type a. a t -> Sexp.t =
-   fun { desc; _ } ->
+   fun { desc; _ } -> sexp_of_desc desc
+
+  and sexp_of_desc : type a. a desc -> Sexp.t =
+   fun desc ->
     let open Sexp_helper in
     match desc with
     | Const Unit -> a "()"
@@ -170,7 +183,14 @@ module Expr = struct
     | View es -> l (a "View" :: List.map ~f:sexp_of_t es)
     | Cond { pred; con; alt } ->
         l [ a "Cond"; sexp_of_t pred; sexp_of_t con; sexp_of_t alt ]
-    | Fn { self; param; body } -> l [ a "Fn"; Option.sexp_of_t Id.sexp_of_t self; Id.sexp_of_t param; sexp_of_t body ]
+    | Fn { self; param; body } ->
+        l
+          [
+            a "Fn";
+            Option.sexp_of_t Id.sexp_of_t self;
+            Id.sexp_of_t param;
+            sexp_of_t body;
+          ]
     | App { fn; arg } -> l [ a "App"; sexp_of_t fn; sexp_of_t arg ]
     | Let { id; bound; body } ->
         l [ a "Let"; Id.sexp_of_t id; sexp_of_t bound; sexp_of_t body ]

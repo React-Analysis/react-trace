@@ -26,7 +26,7 @@ and label_stts_expr label = function
 %token <string> STRING
 %token RECORD ASSIGN
 %token VIEW
-%token FUN LET STT IN EFF
+%token FUN REC LET STT IN EFF
 %token IF THEN ELSE
 %token NOT EQ LT GT NE LE GE
 %token AND OR
@@ -69,6 +69,9 @@ expr_:
     | apply { $1 }
     | mkexp(FUN; param = var; RARROW; body = expr_
       { Fn { param; body = hook_free_exn body; self = None } })
+      { $1 }
+    | mkexp(REC; name = var; EQ; FUN; param = var; RARROW; body = expr_
+      { Fn { param; body = hook_free_exn body; self = Some name } })
       { $1 }
     | LET; id = var; EQ; bound = expr_; IN; body = expr_
       { let Ex body = body in

@@ -1,7 +1,6 @@
-(*
-open! Core
-open Stdlib.Effect.Deep
+open! Base
 open React_trace
+open Lib_domains
 
 let fuel = 100
 
@@ -19,182 +18,219 @@ let parse_js s =
       (Some { Parser_env.default_parse_options with components = true })
     s None
 
-let rec alpha_conv_expr_blind :
-    type a. (string -> string) -> a Syntax.Expr.t -> a Syntax.Expr.t =
+let rec alpha_conv_expr_blind : type a.
+    (string -> string) -> a Syntax.Expr.desc -> a Syntax.Expr.desc =
   let open Syntax.Expr in
+  let alpha_conv_expr_blind' bindings { desc; loc } =
+    { desc = alpha_conv_expr_blind bindings desc; loc }
+  in
   fun bindings -> function
     | Const c -> Const c
     | Var x -> Var (bindings x)
-    | View es -> View (List.map es ~f:(alpha_conv_expr_blind bindings))
+    | View es -> View (List.map es ~f:(alpha_conv_expr_blind' bindings))
     | Cond { pred; con; alt } ->
         Cond
           {
-            pred = alpha_conv_expr_blind bindings pred;
-            con = alpha_conv_expr_blind bindings con;
-            alt = alpha_conv_expr_blind bindings alt;
+            pred = alpha_conv_expr_blind' bindings pred;
+            con = alpha_conv_expr_blind' bindings con;
+            alt = alpha_conv_expr_blind' bindings alt;
           }
     | Fn { self; param; body } ->
-        Fn { self = Option.map ~f:bindings self; param; body = alpha_conv_expr_blind bindings body }
+        Fn
+          {
+            self = Option.map ~f:bindings self;
+            param;
+            body = alpha_conv_expr_blind' bindings body;
+          }
     | App { fn; arg } ->
         App
           {
-            fn = alpha_conv_expr_blind bindings fn;
-            arg = alpha_conv_expr_blind bindings arg;
+            fn = alpha_conv_expr_blind' bindings fn;
+            arg = alpha_conv_expr_blind' bindings arg;
           }
     | Let { id; bound; body } ->
         Let
           {
             id = bindings id;
-            bound = alpha_conv_expr_blind bindings bound;
-            body = alpha_conv_expr_blind bindings body;
+            bound = alpha_conv_expr_blind' bindings bound;
+            body = alpha_conv_expr_blind' bindings body;
           }
     | Stt { stt; set; init; body; label } ->
         Stt
           {
             stt = bindings stt;
             set = bindings set;
-            init = alpha_conv_expr_blind bindings init;
-            body = alpha_conv_expr_blind bindings body;
+            init = alpha_conv_expr_blind' bindings init;
+            body = alpha_conv_expr_blind' bindings body;
             label = bindings (Int.to_string label) |> Int.of_string;
           }
-    | Eff e -> Eff (alpha_conv_expr_blind bindings e)
+    | Eff e -> Eff (alpha_conv_expr_blind' bindings e)
     | Seq (e1, e2) ->
         Seq
-          (alpha_conv_expr_blind bindings e1, alpha_conv_expr_blind bindings e2)
+          ( alpha_conv_expr_blind' bindings e1,
+            alpha_conv_expr_blind' bindings e2 )
     | Bop { left; right; op } ->
         Bop
           {
-            left = alpha_conv_expr_blind bindings left;
-            right = alpha_conv_expr_blind bindings right;
+            left = alpha_conv_expr_blind' bindings left;
+            right = alpha_conv_expr_blind' bindings right;
             op;
           }
-    | Uop { arg; op } -> Uop { arg = alpha_conv_expr_blind bindings arg; op }
+    | Uop { arg; op } -> Uop { arg = alpha_conv_expr_blind' bindings arg; op }
     | Alloc -> Alloc
     | Set { obj; idx; value } ->
         Set
           {
-            obj = alpha_conv_expr_blind bindings obj;
-            idx = alpha_conv_expr_blind bindings idx;
-            value = alpha_conv_expr_blind bindings value;
+            obj = alpha_conv_expr_blind' bindings obj;
+            idx = alpha_conv_expr_blind' bindings idx;
+            value = alpha_conv_expr_blind' bindings value;
           }
     | Get { obj; idx } ->
         Get
           {
-            obj = alpha_conv_expr_blind bindings obj;
-            idx = alpha_conv_expr_blind bindings idx;
+            obj = alpha_conv_expr_blind' bindings obj;
+            idx = alpha_conv_expr_blind' bindings idx;
           }
 
-let rec alpha_conv_expr :
-    type a.
+let rec alpha_conv_expr : type a.
     (string -> string) -> a Syntax.Expr.t -> a Syntax.Expr.t -> a Syntax.Expr.t
     =
   let open Syntax.Expr in
   fun bindings base src ->
-    match (base, src) with
-    | Const _, Const _ -> src
-    | Var _, Var x' -> Var (bindings x')
-    | View es, View es' ->
-        let len = List.length es in
-        let len' = List.length es' in
-        if len < len' then
-          View
-            (List.map2_exn es (List.take es' len) ~f:(alpha_conv_expr bindings))
-        else if len > len' then
-          View
-            (List.map2_exn (List.take es len') es' ~f:(alpha_conv_expr bindings))
-        else View (List.map2_exn es es' ~f:(alpha_conv_expr bindings))
-    | Cond { pred; con; alt }, Cond { pred = pred'; con = con'; alt = alt' } ->
-        Cond
-          {
-            pred = alpha_conv_expr bindings pred pred';
-            con = alpha_conv_expr bindings con con';
-            alt = alpha_conv_expr bindings alt alt';
-          }
-    | Fn { self = None; param; body }, Fn { self = None; param = param'; body = body' } ->
-        let bindings' x =
-          if String.(x = param') then param else
-          bindings x in
-        Fn { self = None; param; body = alpha_conv_expr bindings' body body' }
-    | Fn { self = Some self; param; body }, Fn { self = Some self'; param = param'; body = body' } ->
-        (*
-  The function name is bound before the parameters
-  according to js semantics (ECMA-262 14th edition, p.347, "15.2.5 Runtime Semantics: InstantiateOrdinaryFunctionExpression":
-    "5. Perform ! funcEnv.CreateImmutableBinding(name, false).").
-    Thus param takes precedence over self.
-   *)
-        let bindings' x =
-          if String.(x = param') then param else
-          if String.(x = self') then self else
-          bindings x in
-        Fn { self = Some self; param; body = alpha_conv_expr bindings' body body' }
-    | App { fn; arg }, App { fn = fn'; arg = arg' } ->
-        App
-          {
-            fn = alpha_conv_expr bindings fn fn';
-            arg = alpha_conv_expr bindings arg arg';
-          }
-    | Let { id; bound; body }, Let { id = id'; bound = bound'; body = body' } ->
-        let bindings' x = if String.(x = id') then id else bindings x in
-        Let
-          {
-            id;
-            bound = alpha_conv_expr bindings bound bound';
-            body = alpha_conv_expr bindings' body body';
-          }
-    | ( Stt { stt; set; init; body; label },
-        Stt
-          { stt = stt'; set = set'; init = init'; body = body'; label = label' }
-      ) ->
-        let bindings' x =
-          if String.(x = stt') then stt
-          else if String.(x = set') then set
-          else if String.(x = Int.to_string label') then Int.to_string label
-          else bindings x
-        in
-        Stt
-          {
-            stt;
-            set;
-            init = alpha_conv_expr bindings init init';
-            body = alpha_conv_expr bindings' body body';
-            label;
-          }
-    | Eff e, Eff e' -> Eff (alpha_conv_expr bindings e e')
-    | Seq (e1, e2), Seq (e1', e2') ->
-        Seq (alpha_conv_expr bindings e1 e1', alpha_conv_expr bindings e2 e2')
-    | Bop { left; right; _ }, Bop { left = left'; right = right'; op = op' } ->
-        Bop
-          {
-            left = alpha_conv_expr bindings left left';
-            right = alpha_conv_expr bindings right right';
-            op = op';
-          }
-    | Uop { arg; _ }, Uop { arg = arg'; op = op' } ->
-        Uop { arg = alpha_conv_expr bindings arg arg'; op = op' }
-    | Alloc, Alloc -> Alloc
-    | Set { obj; idx; value }, Set { obj = obj'; idx = idx'; value = value' } ->
-        Set
-          {
-            obj = alpha_conv_expr bindings obj obj';
-            idx = alpha_conv_expr bindings idx idx';
-            value = alpha_conv_expr bindings value value';
-          }
-    | Get { obj; idx }, Get { obj = obj'; idx = idx' } ->
-        Get
-          {
-            obj = alpha_conv_expr bindings obj obj';
-            idx = alpha_conv_expr bindings idx idx';
-          }
-    | _, _ -> alpha_conv_expr_blind bindings src
+    let { desc = base_desc; _ } = base in
+    let { desc = src_desc; loc } = src in
+    let desc =
+      (match (base_desc, src_desc) with
+       | Const _, Const _ -> src_desc
+       | Var _, Var x' -> Var (bindings x')
+       | View es, View es' ->
+           let len = List.length es in
+           let len' = List.length es' in
+           if len < len' then
+             View
+               (List.map2_exn es (List.take es' len)
+                  ~f:(alpha_conv_expr bindings))
+           else if len > len' then
+             View
+               (List.map2_exn (List.take es len') es'
+                  ~f:(alpha_conv_expr bindings))
+           else View (List.map2_exn es es' ~f:(alpha_conv_expr bindings))
+       | Cond { pred; con; alt }, Cond { pred = pred'; con = con'; alt = alt' }
+         ->
+           Cond
+             {
+               pred = alpha_conv_expr bindings pred pred';
+               con = alpha_conv_expr bindings con con';
+               alt = alpha_conv_expr bindings alt alt';
+             }
+       | ( Fn { self = None; param; body },
+           Fn { self = None; param = param'; body = body' } ) ->
+           let bindings' x =
+             if String.(x = param') then param else bindings x
+           in
+           Fn
+             { self = None; param; body = alpha_conv_expr bindings' body body' }
+       | ( Fn { self = Some self; param; body },
+           Fn { self = Some self'; param = param'; body = body' } ) ->
+           (* The function name is bound before the parameters according to js
+              semantics (ECMA-262 14th edition, p.347, "15.2.5 Runtime
+              Semantics: InstantiateOrdinaryFunctionExpression": "5. Perform !
+              funcEnv.CreateImmutableBinding(name, false)."). Thus param takes
+              precedence over self. *)
+           let bindings' x =
+             if String.(x = param') then param
+             else if String.(x = self') then self
+             else bindings x
+           in
+           Fn
+             {
+               self = Some self;
+               param;
+               body = alpha_conv_expr bindings' body body';
+             }
+       | App { fn; arg }, App { fn = fn'; arg = arg' } ->
+           App
+             {
+               fn = alpha_conv_expr bindings fn fn';
+               arg = alpha_conv_expr bindings arg arg';
+             }
+       | Let { id; bound; body }, Let { id = id'; bound = bound'; body = body' }
+         ->
+           let bindings' x = if String.(x = id') then id else bindings x in
+           Let
+             {
+               id;
+               bound = alpha_conv_expr bindings bound bound';
+               body = alpha_conv_expr bindings' body body';
+             }
+       | ( Stt { stt; set; init; body; label },
+           Stt
+             {
+               stt = stt';
+               set = set';
+               init = init';
+               body = body';
+               label = label';
+             } ) ->
+           let bindings' x =
+             if String.(x = stt') then stt
+             else if String.(x = set') then set
+             else if String.(x = Int.to_string label') then Int.to_string label
+             else bindings x
+           in
+           Stt
+             {
+               stt;
+               set;
+               init = alpha_conv_expr bindings init init';
+               body = alpha_conv_expr bindings' body body';
+               label;
+             }
+       | Eff e, Eff e' -> Eff (alpha_conv_expr bindings e e')
+       | Seq (e1, e2), Seq (e1', e2') ->
+           Seq (alpha_conv_expr bindings e1 e1', alpha_conv_expr bindings e2 e2')
+       | Bop { left; right; _ }, Bop { left = left'; right = right'; op = op' }
+         ->
+           Bop
+             {
+               left = alpha_conv_expr bindings left left';
+               right = alpha_conv_expr bindings right right';
+               op = op';
+             }
+       | Uop { arg; _ }, Uop { arg = arg'; op = op' } ->
+           Uop { arg = alpha_conv_expr bindings arg arg'; op = op' }
+       | Alloc, Alloc -> Alloc
+       | Set { obj; idx; value }, Set { obj = obj'; idx = idx'; value = value' }
+         ->
+           Set
+             {
+               obj = alpha_conv_expr bindings obj obj';
+               idx = alpha_conv_expr bindings idx idx';
+               value = alpha_conv_expr bindings value value';
+             }
+       | Get { obj; idx }, Get { obj = obj'; idx = idx' } ->
+           Get
+             {
+               obj = alpha_conv_expr bindings obj obj';
+               idx = alpha_conv_expr bindings idx idx';
+             }
+       | _, _ -> alpha_conv_expr_blind bindings src_desc
+        : a desc)
+    in
+    { desc; loc }
 
 let rec alpha_conv_prog_blind bindings src =
   let open Syntax.Prog in
+  let alpha_conv_expr_blind' bindings e =
+    let open Syntax.Expr in
+    { desc = alpha_conv_expr_blind bindings e.desc; loc = e.loc }
+  in
   match src with
-  | Expr e -> Expr (alpha_conv_expr_blind bindings e)
+  | Expr e -> Expr (alpha_conv_expr_blind' bindings e)
   | Comp ({ name; param; body }, e) ->
       let bindings' x = if String.(x = name) then name else bindings x in
       Comp
-        ( { name; param; body = alpha_conv_expr_blind bindings' body },
+        ( { name; param; body = alpha_conv_expr_blind' bindings' body },
           alpha_conv_prog_blind bindings' e )
 
 let rec alpha_conv_prog bindings base src =
@@ -210,313 +246,144 @@ let rec alpha_conv_prog bindings base src =
           alpha_conv_prog e_bindings e e' )
   | _, _ -> alpha_conv_prog_blind bindings src
 
-let parse_unit () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "()" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse unit" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Const Unit))
+let e_const : 'a. Syntax.Expr.const -> 'a Syntax.Expr.t =
+ fun c -> { desc = Const c; loc = Location.none }
 
-let parse_true () =
+let e_var v = Syntax.Expr.{ desc = Var v; loc = Location.none }
+let e_app fn arg = Syntax.Expr.{ desc = App { fn; arg }; loc = Location.none }
+
+let e_fn ?self param body =
+  Syntax.Expr.{ desc = Fn { self; param; body }; loc = Location.none }
+
+let e_let id bound body =
+  Syntax.Expr.{ desc = Let { id; bound; body }; loc = Location.none }
+
+let e_cond pred con alt =
+  Syntax.Expr.{ desc = Cond { pred; con; alt }; loc = Location.none }
+
+let e_bop op left right =
+  Syntax.Expr.{ desc = Bop { op; left; right }; loc = Location.none }
+
+let e_uop op arg = Syntax.Expr.{ desc = Uop { op; arg }; loc = Location.none }
+
+let e_seq left right =
+  Syntax.Expr.{ desc = Seq (left, right); loc = Location.none }
+
+let e_eff expr = Syntax.Expr.{ desc = Eff expr; loc = Location.none }
+
+let e_stt label stt set init body =
+  Syntax.Expr.
+    { desc = Stt { label; stt; set; init; body }; loc = Location.none }
+
+let e_view elements = Syntax.Expr.{ desc = View elements; loc = Location.none }
+
+let e_set obj idx value =
+  Syntax.Expr.{ desc = Set { obj; idx; value }; loc = Location.none }
+
+let e_get obj idx = Syntax.Expr.{ desc = Get { obj; idx }; loc = Location.none }
+let e_alloc = Syntax.Expr.{ desc = Alloc; loc = Location.none }
+
+let parse_expr_test msg input expected =
   let open Syntax in
-  let (Ex expr) = parse_expr "true" in
+  let (Ex expr) = parse_expr input in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse true" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Const (Bool true)))
+    ~msg ~actual:(Expr.sexp_of_t expr) ~expected:(Expr.sexp_of_t expected)
+
+let parse_unit () = parse_expr_test "parse unit" "()" (e_const Unit)
+let parse_true () = parse_expr_test "parse true" "true" (e_const (Bool true))
 
 let parse_false () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "false" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse false" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Const (Bool false)))
+  parse_expr_test "parse false" "false" (e_const (Bool false))
 
-let parse_int () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "42" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse int" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Const (Int 42)))
+let parse_int () = parse_expr_test "parse int" "42" (e_const (Int 42))
 
 let parse_var () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "_some_variable123" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse var" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Var "_some_variable123"))
+  parse_expr_test "parse var" "_some_variable123" (e_var "_some_variable123")
 
 let parse_view () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "view [(), 42, (), Comp ()]" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse view" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (View
-             [
-               Const Unit;
-               Const (Int 42);
-               Const Unit;
-               App { fn = Var "Comp"; arg = Const Unit };
-             ]))
+  parse_expr_test "parse view" "view [(), 42, (), Comp ()]"
+    (e_view
+       [
+         e_const Unit;
+         e_const (Int 42);
+         e_const Unit;
+         e_app (e_var "Comp") (e_const Unit);
+       ])
 
 let parse_open_cond () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "if true then if true then ()" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse open cond" ~expected:(Expr.sexp_of_t expr)
-    ~actual:
-      Expr.(
-        sexp_of_t
-          (Cond
-             {
-               pred = Const (Bool true);
-               con =
-                 Cond
-                   {
-                     pred = Const (Bool true);
-                     con = Const Unit;
-                     alt = Const Unit;
-                   };
-               alt = Const Unit;
-             }))
+  parse_expr_test "parse open cond" "if true then if true then ()"
+    (e_cond (e_const (Bool true))
+       (e_cond (e_const (Bool true)) (e_const Unit) (e_const Unit))
+       (e_const Unit))
 
 let parse_closed_cond () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "if true then if true then () else ()" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse closed cond" ~expected:(Expr.sexp_of_t expr)
-    ~actual:
-      Expr.(
-        sexp_of_t
-          (Cond
-             {
-               pred = Const (Bool true);
-               con =
-                 Cond
-                   {
-                     pred = Const (Bool true);
-                     con = Const Unit;
-                     alt = Const Unit;
-                   };
-               alt = Const Unit;
-             }))
+  parse_expr_test "parse closed cond" "if true then if true then () else ()"
+    (e_cond (e_const (Bool true))
+       (e_cond (e_const (Bool true)) (e_const Unit) (e_const Unit))
+       (e_const Unit))
 
 let parse_fn () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "fun x -> fun y -> x + y" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse function" ~expected:(Expr.sexp_of_t expr)
-    ~actual:
-      Expr.(
-        sexp_of_t
-          (Fn
-             {
-               self = None;
-               param = "x";
-               body =
-                 Fn
-                   {
-                     self = None;
-                     param = "y";
-                     body = Bop { op = Plus; left = Var "x"; right = Var "y" };
-                   };
-             }))
+  parse_expr_test "parse function" "fun x -> fun y -> x + y"
+    (e_fn "x" (e_fn "y" (e_bop Plus (e_var "x") (e_var "y"))))
 
 let parse_rec () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "rec f = fun x -> f x" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse recursive function" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Fn
-             {
-               self = Some "f";
-               param = "x";
-               body = App { fn = Var "f"; arg = Var "x" };
-             }))
+  parse_expr_test "parse recursive function" "rec f = fun x -> f x"
+    (e_fn ~self:"f" "x" (e_app (e_var "f") (e_var "x")))
 
 let parse_app () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "a b c" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse app" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (App { fn = App { fn = Var "a"; arg = Var "b" }; arg = Var "c" }))
+  parse_expr_test "parse app" "a b c"
+    (e_app (e_app (e_var "a") (e_var "b")) (e_var "c"))
 
 let parse_let () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "let x = let y = 1 in y in let z = x in z" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse let" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Let
-             {
-               id = "x";
-               bound = Let { id = "y"; bound = Const (Int 1); body = Var "y" };
-               body = Let { id = "z"; bound = Var "x"; body = Var "z" };
-             }))
+  parse_expr_test "parse let" "let x = let y = 1 in y in let z = x in z"
+    (e_let "x"
+       (e_let "y" (e_const (Int 1)) (e_var "y"))
+       (e_let "z" (e_var "x") (e_var "z")))
 
 let parse_stt () =
-  let open Syntax in
-  let (Ex expr) =
-    parse_expr
-      "let (x, setX) = useState 42 in let (y, setY) = useState -42 in x + y"
-  in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse stt" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Stt
-             {
-               label = 0;
-               stt = "x";
-               set = "setX";
-               init = Const (Int 42);
-               body =
-                 Stt
-                   {
-                     label = 1;
-                     stt = "y";
-                     set = "setY";
-                     init = Uop { op = Uminus; arg = Const (Int 42) };
-                     body = Bop { op = Plus; left = Var "x"; right = Var "y" };
-                   };
-             }))
+  parse_expr_test "parse stt"
+    "let (x, setX) = useState 42 in let (y, setY) = useState -42 in x + y"
+    (e_stt 0 "x" "setX" (e_const (Int 42))
+       (e_stt 1 "y" "setY"
+          (e_uop Uminus (e_const (Int 42)))
+          (e_bop Plus (e_var "x") (e_var "y"))))
 
 let parse_eff () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "useEffect (x ())" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse eff" ~actual:(Expr.sexp_of_t expr)
-    ~expected:Expr.(sexp_of_t (Eff (App { fn = Var "x"; arg = Const Unit })))
+  parse_expr_test "parse eff" "useEffect (x ())"
+    (e_eff (e_app (e_var "x") (e_const Unit)))
 
 let parse_seq () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "a; b; c; d" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse seq" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(sexp_of_t (Seq (Var "a", Seq (Var "b", Seq (Var "c", Var "d")))))
+  parse_expr_test "parse seq" "a; b; c; d"
+    (e_seq (e_var "a") (e_seq (e_var "b") (e_seq (e_var "c") (e_var "d"))))
 
 let parse_op () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "not (+-a () <= 0 + -0) || true" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse op" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Bop
-             {
-               op = Or;
-               left =
-                 Uop
-                   {
-                     op = Not;
-                     arg =
-                       Bop
-                         {
-                           op = Le;
-                           left =
-                             Uop
-                               {
-                                 op = Uplus;
-                                 arg =
-                                   Uop
-                                     {
-                                       op = Uminus;
-                                       arg =
-                                         App { fn = Var "a"; arg = Const Unit };
-                                     };
-                               };
-                           right =
-                             Bop
-                               {
-                                 op = Plus;
-                                 left = Const (Int 0);
-                                 right =
-                                   Uop { op = Uminus; arg = Const (Int 0) };
-                               };
-                         };
-                   };
-               right = Const (Bool true);
-             }))
+  parse_expr_test "parse op" "not (+-a () <= 0 + -0) || true"
+    (e_bop Or
+       (e_uop Not
+          (e_bop Le
+             (e_uop Uplus (e_uop Uminus (e_app (e_var "a") (e_const Unit))))
+             (e_bop Plus (e_const (Int 0)) (e_uop Uminus (e_const (Int 0))))))
+       (e_const (Bool true)))
 
 let parse_obj () =
-  let open Syntax in
-  let (Ex expr) = parse_expr {|let x = {} in x["y"] := 3; x["y"]|} in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Let
-             {
-               id = "x";
-               bound = Alloc;
-               body =
-                 Seq
-                   ( Set
-                       {
-                         obj = Var "x";
-                         idx = Const (String "y");
-                         value = Const (Int 3);
-                       },
-                     Get { obj = Var "x"; idx = Const (String "y") } );
-             }))
+  parse_expr_test "parse obj" "let x = {} in x[\"y\"] := 3; x[\"y\"]"
+    (e_let "x" e_alloc
+       (e_seq
+          (e_set (e_var "x") (e_const (String "y")) (e_const (Int 3)))
+          (e_get (e_var "x") (e_const (String "y")))))
 
 let parse_indexing () =
-  let open Syntax in
-  let (Ex expr) = parse_expr "let x = {} in x[2+2] := 1; x[4] + 1" in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse obj" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Let
-             {
-               id = "x";
-               bound = Alloc;
-               body =
-                 Seq
-                   ( Set
-                       {
-                         obj = Var "x";
-                         idx =
-                           Bop
-                             {
-                               op = Plus;
-                               left = Const (Int 2);
-                               right = Const (Int 2);
-                             };
-                         value = Const (Int 1);
-                       },
-                     Bop
-                       {
-                         op = Plus;
-                         left = Get { obj = Var "x"; idx = Const (Int 4) };
-                         right = Const (Int 1);
-                       } );
-             }))
+  parse_expr_test "parse obj" "let x = {} in x[2+2] := 1; x[4] + 1"
+    (e_let "x" e_alloc
+       (e_seq
+          (e_set (e_var "x")
+             (e_bop Plus (e_const (Int 2)) (e_const (Int 2)))
+             (e_const (Int 1)))
+          (e_bop Plus (e_get (e_var "x") (e_const (Int 4))) (e_const (Int 1)))))
 
 let parse_string () =
-  let open Syntax in
-  let (Ex expr) = parse_expr {|"hello world"; "\"\\ hello"|} in
-  Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"parse string" ~actual:(Expr.sexp_of_t expr)
-    ~expected:
-      Expr.(
-        sexp_of_t
-          (Seq (Const (String "hello world"), Const (String "\"\\ hello"))))
+  parse_expr_test "parse string" "\"hello world\""
+    (e_const (String "hello world"))
 
 let js_var () =
   let open Syntax in
@@ -540,15 +407,20 @@ let js_rec () =
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert recursive function" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog "let t = (rec f = fun x -> f x) in ()" |> Prog.sexp_of_t)
+    ~expected:
+      (parse_prog "let t = (rec f = fun x -> f x) in ()" |> Prog.sexp_of_t)
 
 let js_while () =
   let open Syntax in
-  let js, _ = parse_js "let a = true; let b = (function(x){}); while (a) { b(0) }" in
+  let js, _ =
+    parse_js "let a = true; let b = (function(x){}); while (a) { b(0) }"
+  in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert while" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog {|
+    ~expected:
+      (parse_prog
+         {|
   let a = true in
   let b = fun x -> () in
   (rec Fbrk = fun Xbrk ->
@@ -594,8 +466,7 @@ let js_while () =
     else Cbrk)
   ()
   |}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_literal () =
   let open Syntax in
@@ -612,7 +483,9 @@ let js_jsx () =
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
     ~msg:"convert jsx" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog {|view [()]; view [Comp ()]; view [(Mod["Comp"]) ()]|} |> Prog.sexp_of_t)
+    ~expected:
+      (parse_prog {|view [()]; view [Comp ()]; view [(Mod["Comp"]) ()]|}
+      |> Prog.sexp_of_t)
 
 let js_op () =
   let open Syntax in
@@ -636,8 +509,7 @@ void a; -a; +a; !a|}
 a = b; a <> b; a < b; a <= b; a > b; a >= b;
 a + b; a - b; a * b;
 (a; ()); -a; +a; not a|}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_optcall () =
   let open Syntax in
@@ -647,8 +519,7 @@ let js_optcall () =
     ~msg:"convert optional call" ~actual:(Prog.sexp_of_t prog)
     ~expected:
       (parse_prog "let a' = a in if a' = () then () else a'(b)"
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_cond () =
   let open Syntax in
@@ -678,8 +549,7 @@ let q' = q in
 let x = q'["x"] in
 let y = q'["y"] in
 ()|}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_pattern_array () =
   let open Syntax in
@@ -695,8 +565,7 @@ let q' = q in
   let y = q'[1] in
   let z = q'[3] in
 ()|}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_pattern_nested () =
   let open Syntax in
@@ -713,8 +582,7 @@ let y = x["y"] in
 let a = y[0] in
 let b = y[1] in
 ()|}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_object () =
   let open Syntax in
@@ -726,46 +594,50 @@ let js_object () =
       (parse_prog
          {|
 let p = (let obj = {} in obj["y"] := 1; obj["z"] := 2; obj[3] := 4; obj) in p["y"]; p[1+2]|}
-      |> alpha_conv_prog Fun.id prog
-      |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_if_cpl_same () =
   let open Syntax in
   let js, _ = parse_js "if (a) break A; else break A;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"convert conditional with same completion" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog {|
+    ~msg:"convert conditional with same completion"
+    ~actual:(Prog.sexp_of_t prog)
+    ~expected:
+      (parse_prog {|
       if a then ()
       else ()
-    |}
-    |> Prog.sexp_of_t)
+    |} |> Prog.sexp_of_t)
 
 let js_if_cpl_brk_brk () =
   let open Syntax in
   let js, _ = parse_js "if (a) break A; else break B;" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"convert conditional with break-break completion" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog {|
+    ~msg:"convert conditional with break-break completion"
+    ~actual:(Prog.sexp_of_t prog)
+    ~expected:
+      (parse_prog
+         {|
       if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
       else (let obj2 = {} in obj2["tag"] := "BRK"; obj2["label"] := "brk:B"; obj2)
     |}
-    |> alpha_conv_prog Fun.id prog
-    |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let js_if_cpl_brk_nrm () =
   let open Syntax in
   let js, _ = parse_js "if (a) break A; else b" in
   let prog = Js_syntax.convert js in
   Alcotest.(check' (of_pp Sexp.pp_hum))
-    ~msg:"convert conditional with break-normal completion" ~actual:(Prog.sexp_of_t prog)
-    ~expected:(parse_prog {|
+    ~msg:"convert conditional with break-normal completion"
+    ~actual:(Prog.sexp_of_t prog)
+    ~expected:
+      (parse_prog
+         {|
       if a then (let obj1 = {} in obj1["tag"] := "BRK"; obj1["label"] := "brk:A"; obj1)
       else (b; let obj2 = {} in obj2["tag"] := "NRM"; obj2)
     |}
-    |> alpha_conv_prog Fun.id prog
-    |> Prog.sexp_of_t)
+      |> alpha_conv_prog Fn.id prog |> Prog.sexp_of_t)
 
 let no_side_effect () =
   let prog =
@@ -778,7 +650,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_body_nonterminate () =
@@ -794,10 +666,13 @@ view [C ()]
 |}
   in
   let run () =
-    Interp.(match_with (run ~fuel) prog re_render_limit_h ~re_render_limit:25)
+    Interp.re_render_limit_h
+      (Interp.run ~fuel ~recorder:(module Default_recorder))
+      prog ~re_render_limit:25
     |> ignore
   in
-  Alcotest.(check_raises) "retry indefintely" Interp.Too_many_re_renders run
+  Alcotest.(check_raises)
+    "retry indefintely" Interp_effects.Too_many_re_renders run
 
 let set_in_body_guarded () =
   let prog =
@@ -811,7 +686,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_step_one_time () =
@@ -826,7 +701,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:1 ~actual:steps
 
 let set_in_effect_step_two_times () =
@@ -841,7 +716,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_step_indefinitely () =
@@ -856,7 +731,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
 
 let set_in_effect_guarded_step_two_times () =
@@ -871,7 +746,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_in_effect_guarded_step_n_times () =
@@ -886,7 +761,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
 let set_in_effect_with_arg_step_one_time () =
@@ -901,7 +776,7 @@ let C x =
 view [C 42]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_effect_with_arg_step_two_times () =
@@ -916,7 +791,7 @@ let C x =
 view [C 0]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_two_times () =
@@ -934,7 +809,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let set_passed_step_indefinitely () =
@@ -952,7 +827,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step indefintely" ~expected:fuel ~actual:steps
 
 let set_in_effect_twice_step_one_time () =
@@ -967,7 +842,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let set_in_removed_child_step_two_times () =
@@ -990,7 +865,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let state_persists_in_child () =
@@ -1013,7 +888,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step two times" ~expected:2 ~actual:steps
 
 let new_child_steps_again () =
@@ -1036,7 +911,7 @@ let D x =
 view [D ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step three times" ~expected:3 ~actual:steps
 
 let set_in_effect_guarded_step_n_times_with_obj () =
@@ -1051,7 +926,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step five times" ~expected:5 ~actual:steps
 
 let updating_obj_without_set_does_not_rerender () =
@@ -1066,7 +941,7 @@ let C x =
 view [C ()]
 |}
   in
-  let { Interp.steps; _ } = Interp.run ~fuel prog in
+  let { Interp.steps; _ } = Interp.run ~fuel ~recorder:(module Default_recorder) prog in
   Alcotest.(check' int) ~msg:"step one time" ~expected:1 ~actual:steps
 
 let () =
@@ -1153,4 +1028,3 @@ let () =
             updating_obj_without_set_does_not_rerender;
         ] );
     ]
-    *)
