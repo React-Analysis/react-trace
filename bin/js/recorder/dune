@@ -1,3 +1,5 @@
 (library
  (name recorder)
+ (preprocess
+  (pps ppx_yojson_conv))
  (libraries react_trace base))

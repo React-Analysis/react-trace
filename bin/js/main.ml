@@ -22,7 +22,7 @@ let parse_program_str (program_str : string) : (Syntax.Prog.t, string) Result.t
 let () =
   Fmt_tty.setup_std_outputs ();
   Logs.set_reporter (Logs_fmt.reporter ());
-  Logs.set_level (Some Logs.Info);
+  Logs.set_level (Some Logs.Error);
 
   let open Js_of_ocaml in
   Js.export_all
@@ -37,15 +37,12 @@ let () =
               prog
           in
           if Logs.err_count () > 0 then Error "error" else Ok recording)
-         |> ( function
+         |> function
          | Ok s ->
-             [|
-               ("log", s.log |> Js.string |> Js.Unsafe.inject);
-               ( "checkpoints",
-                 s.checkpoints
-                 |> Array.of_list_rev_map ~f:Js.string
-                 |> Js.array |> Js.Unsafe.inject );
-             |]
-         | Error s -> [| ("error", s |> Js.string |> Js.Unsafe.inject) |] )
-         |> Js.Unsafe.obj
+             let json_str =
+               s |> Recorder.yojson_of_recording |> Yojson.Safe.to_string
+             in
+             Js.Unsafe.global##._JSON##parse json_str
+         | Error s ->
+             Js.Unsafe.obj [| ("error", s |> Js.string |> Js.Unsafe.inject) |]
     end)

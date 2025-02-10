@@ -159,6 +159,18 @@ module M : Domains.S = struct
           Map.set tree_mem ~key:path
             ~data:{ entry with part_view = Node { n with dec } }
 
+    let set_arg tree_mem ~path arg =
+      let ({ part_view; _ } as entry) = Map.find_exn tree_mem path in
+      match part_view with
+      | Root -> assert false
+      | Node n ->
+          Map.set tree_mem ~key:path
+            ~data:
+              {
+                entry with
+                part_view = Node { n with comp_spec = { n.comp_spec with arg } };
+              }
+
     let enq_eff tree_mem ~path clos =
       let ({ part_view; _ } as entry) = Map.find_exn tree_mem path in
       match part_view with
@@ -167,6 +179,10 @@ module M : Domains.S = struct
           let eff_q = Job_q.enqueue eff_q clos in
           Map.set tree_mem ~key:path
             ~data:{ entry with part_view = Node { n with eff_q } }
+
+    let root_pt (tree_mem : t) =
+      ignore tree_mem;
+      0
 
     let alloc_pt = Map.length
     let lookup_ent tree_mem ~path = Map.find_exn tree_mem path

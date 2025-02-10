@@ -3,6 +3,23 @@ open! Base
 type 'a t = [] | Snoc of 'a t * 'a
 
 let ( ||> ) l a = Snoc (l, a)
+let rec length : 'a t -> int = function [] -> 0 | Snoc (l, _) -> 1 + length l
+
+(** [replace l i a] replaces the [i]-th element of [l] with [a]. If [i] is the
+    length of [l], pushes [a] to the end of [l]. If [i] is negative or greater
+    than the length of [l], raises [Invalid_argument]. *)
+let replace (l : 'a t) (i : int) (a : 'a) : 'a t =
+  let len = length l in
+  if i < 0 || i > len then raise (Invalid_argument "Snoc_list.replace");
+
+  let rec replace' (l : 'a t) (j : int) : 'a t =
+    match (l, j) with
+    | l, -1 -> Snoc (l, a)
+    | Snoc (l, _), 0 -> Snoc (l, a)
+    | Snoc (l, x), j -> Snoc (replace' l (j - 1), x)
+    | _ -> assert false
+  in
+  replace' l (len - i - 1)
 
 let rec iter t ~(f : 'a -> unit) : unit =
   match t with
