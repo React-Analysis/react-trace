@@ -15,6 +15,7 @@ let keywords =
       ("not", NOT);
       ("view", VIEW);
       ("fun", FUN);
+      ("rec", REC);
       ("if", IF);
       ("then", THEN);
       ("else", ELSE);

@@ -130,6 +130,20 @@ module Env = struct
   let lookup_exn env ~id = lookup env ~id |> value_exn (Unbound_var id)
 end
 
+let build_app_env (clos_value : clos) (arg : value) : Env.t =
+  (* The function name is bound before the parameters, according to js semantics
+     (ECMA-262 14th edition, p.347, "15.2.5 Runtime Semantics:
+     InstantiateOrdinaryFunctionExpression": "5. Perform !
+     funcEnv.CreateImmutableBinding(name, false)."). *)
+  let { self; param; body = _; env } = clos_value in
+  let env =
+    match self with
+    | None -> env
+    | Some self -> Env.extend env ~id:self ~value:(Clos clos_value)
+  in
+  let env = Env.extend env ~id:param ~value:arg in
+  env
+
 let rec eval : type a. a Expr.t -> value =
  fun expr ->
   Logger.eval expr;
@@ -145,11 +159,11 @@ let rec eval : type a. a Expr.t -> value =
   | Cond { pred; con; alt } ->
       let p = eval pred |> bool_of_value_exn in
       if p then eval con else eval alt
-  | Fn { param; body } -> Clos { param; body; env = perform Rd_env }
+  | Fn { self; param; body } -> Clos { self; param; body; env = perform Rd_env }
   | App { fn; arg } -> (
       match eval fn with
-      | Clos { param; body; env } ->
-          let env = Env.extend env ~id:param ~value:(eval arg) in
+      | Clos ({ body; _ } as clos_value) ->
+          let env = build_app_env clos_value (eval arg) in
           perform (In_env env) eval body
       | Comp_clos { comp; env } -> Comp_spec { comp; env; arg = eval arg }
       | Set_clos { label; path } ->
@@ -192,8 +206,9 @@ let rec eval : type a. a Expr.t -> value =
           let v_old, q = perform (Lookup_st (path, label)) in
           (* Run the setting thunks in the set queue *)
           let v =
-            Job_q.fold q ~init:v_old ~f:(fun value { param; body; env } ->
-                let env = Env.extend env ~id:param ~value in
+            Job_q.fold q ~init:v_old ~f:(fun value clos ->
+                let { body; _ } = clos in
+                let env = build_app_env clos value in
                 perform (In_env env) eval body)
           in
 
@@ -211,7 +226,7 @@ let rec eval : type a. a Expr.t -> value =
       and phase = perform Rd_ph
       and env = perform Rd_env in
       (match phase with P_effect -> raise Invalid_phase | _ -> ());
-      perform (Enq_eff (path, { param = Id.unit; body = e; env }));
+      perform (Enq_eff (path, { self = None; param = Id.unit; body = e; env }));
       Unit
   | Seq (e1, e2) ->
       eval e1 |> ignore;
