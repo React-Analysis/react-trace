@@ -153,6 +153,79 @@ module Expr = struct
     | (Set _ as e) ->
         mk e
 
+  let x_seq ((e1, e2) : some_expr * some_expr) ~loc : some_expr =
+    match (hook_free e1, hook_free e2) with
+    | Some e1, Some e2 -> Ex (mk ~loc (Seq (e1, e2)))
+    | _ -> Ex (mk ~loc (Seq (hook_full e1, hook_full e2)))
+
+  let x_let ~id ~(bound : some_expr) ~(body : some_expr) ~loc : some_expr =
+    let bound = hook_free_exn bound in
+    match hook_free body with
+    | Some body -> Ex (mk ~loc (Let { id; bound; body }))
+    | _ -> Ex (mk ~loc (Let { id; bound; body = hook_full body }))
+
+  let x_stt ~label ~stt ~set ~init ~body ~loc : some_expr =
+    Ex
+      (mk ~loc
+         (Stt
+            {
+              label;
+              stt;
+              set;
+              init = hook_free_exn init;
+              body = hook_full body;
+            }))
+
+  let x_eff ~e ~loc : some_expr = Ex (mk ~loc (Eff (hook_free_exn e)))
+
+  let x_cond ~pred ~con ~alt ~loc : some_expr =
+    Ex
+      (mk ~loc
+         (Cond
+            {
+              pred = hook_free_exn pred;
+              con = hook_free_exn con;
+              alt = hook_free_exn alt;
+            }))
+
+  let x_alloc ~loc : some_expr = Ex (mk ~loc Alloc)
+  let x_var id ~loc : some_expr = Ex (mk ~loc (Var id))
+
+  let x_set ~obj ~idx ~value ~loc : some_expr =
+    Ex
+      (mk ~loc
+         (Set
+            {
+              obj = hook_free_exn obj;
+              idx = hook_free_exn idx;
+              value = hook_free_exn value;
+            }))
+
+  let x_get ~obj ~idx ~loc : some_expr =
+    Ex (mk ~loc (Get { obj = hook_free_exn obj; idx = hook_free_exn idx }))
+
+  let x_const_string s ~loc : some_expr = Ex (mk ~loc (Const (String s)))
+  let x_const_unit ~loc : some_expr = Ex (mk ~loc (Const Unit))
+  let x_const_bool b ~loc : some_expr = Ex (mk ~loc (Const (Bool b)))
+  let x_const_int i ~loc : some_expr = Ex (mk ~loc (Const (Int i)))
+
+  let x_bop ~op ~left ~right ~loc : some_expr =
+    Ex
+      (mk ~loc
+         (Bop { op; left = hook_free_exn left; right = hook_free_exn right }))
+
+  let x_uop ~op ~arg ~loc : some_expr =
+    Ex (mk ~loc (Uop { op; arg = hook_free_exn arg }))
+
+  let x_app ~fn ~arg ~loc : some_expr =
+    Ex (mk ~loc (App { fn = hook_free_exn fn; arg = hook_free_exn arg }))
+
+  let x_fn ~self ~param ~body ~loc : some_expr =
+    Ex (mk ~loc (Fn { self; param; body = hook_free_exn body }))
+
+  let x_view es ~loc : some_expr =
+    Ex (mk ~loc (View (List.map ~f:hook_free_exn es)))
+
   let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
 
   let string_of_bop = function
