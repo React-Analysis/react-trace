@@ -84,8 +84,11 @@ let () =
           in
           recording |> List.rev
           |> List.iter ~f:(fun (msg, box) ->
-                 Logs.info (fun m -> m "%s\n" msg);
-                 PrintBox_text.output Stdio.stdout box);
+                 Logs.info (fun m -> m "%s:\n" msg);
+                 PrintBox_text.output Stdio.stdout box;
+                 Out_channel.(
+                   output_char stdout '\n';
+                   flush stdout));
           steps)
         else
           let { Interp.steps; _ } =
