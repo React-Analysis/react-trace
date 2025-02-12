@@ -407,7 +407,8 @@ and reconcile (path : Path.t) (old_trees : tree option list)
     (vss : view_spec list) : bool =
   Logger.reconcile path old_trees vss;
   Util.fold2i_exn old_trees vss ~init:false ~f:(fun idx acc old_tree vs ->
-      acc || reconcile1 path idx old_tree vs)
+      (* || short circuits, so evaluate reconcile1 first for side effects *)
+      reconcile1 path idx old_tree vs || acc)
 
 and reconcile1 (path : Path.t) (idx : int) (old_tree : tree option)
     (vs : view_spec) : bool =
@@ -431,16 +432,19 @@ and reconcile1 (path : Path.t) (idx : int) (old_tree : tree option)
 
 let rec commit_effs (path : Path.t) : unit =
   Logger.commit_effs path;
-  let { part_view; children } = perform (Lookup_ent path) in
+  let { children; _ } = perform (Lookup_ent path) in
+  Snoc_list.iter children ~f:commit_effs1;
+
+  (* Refetch the entry, as committing effects of children may change it *)
+  let { part_view; _ } = perform (Lookup_ent path) in
   (match part_view with
   | Root -> ()
   | Node { eff_q; _ } -> (
       Job_q.iter eff_q ~f:(fun { body; env; _ } ->
           (eval |> env_h ~env |> ptph_h ~ptph:(path, P_effect)) body |> ignore);
-
-      (* Refetch the entry, as committing effects may change the entry *)
-      let ent = perform (Lookup_ent path) in
-      match ent.part_view with
+      (* Refetch the entry, as committing effects may change it *)
+      let ({ part_view; _ } as ent) = perform (Lookup_ent path) in
+      match part_view with
       | Root -> assert false
       | Node node ->
           perform
@@ -448,7 +452,6 @@ let rec commit_effs (path : Path.t) : unit =
                ( path,
                  { ent with part_view = Node { node with eff_q = Job_q.empty } }
                ))));
-  Snoc_list.iter children ~f:commit_effs1;
   perform
     (Checkpoint { msg = "After effects"; checkpoint = Effects_finish path })
 
