@@ -907,7 +907,7 @@ let new_child_steps_again () =
 let C x =
   let (s, setS) = useState 42 in
   useEffect (setS (fun s -> 0));
-  view [()]
+  view [s]
 ;;
 let D x =
   let (s, setS) = useState true in
