@@ -63,35 +63,36 @@ module Expr = struct
     | Const : const -> _ desc
     | Var : Id.t -> _ desc
     | View : hook_free t list -> _ desc
-    | Cond : {
-        pred : hook_free t;
-        con : hook_free t;
-        alt : hook_free t;
-      }
-        -> _ desc
-    | Fn : { self : Id.t option; param : Id.t; body : hook_free t } -> _ desc
-    | App : { fn : hook_free t; arg : hook_free t } -> _ desc
-    | Let : { id : Id.t; bound : hook_free t; body : 'a t } -> 'a desc
-    | Stt : {
-        label : Label.t;
-        stt : Id.t;
-        set : Id.t;
-        init : hook_free t;
-        body : hook_full t;
-      }
-        -> hook_full desc
+    | Cond : hook_free t desc_cond -> _ desc
+    | Fn : hook_free t desc_fn -> _ desc
+    | App : hook_free t desc_app -> _ desc
+    | Let : (hook_free t, 'a t) desc_let -> 'a desc
+    | Stt : (hook_free t, hook_full t) desc_stt -> hook_full desc
     | Eff : hook_free t -> hook_full desc
     | Seq : 'a t * 'a t -> 'a desc
-    | Uop : { op : uop; arg : hook_free t } -> _ desc
-    | Bop : { op : bop; left : hook_free t; right : hook_free t } -> _ desc
+    | Uop : hook_free t desc_uop -> _ desc
+    | Bop : hook_free t desc_bop -> _ desc
     | Alloc : _ desc
-    | Get : { obj : hook_free t; idx : hook_free t } -> _ desc
-    | Set : {
-        obj : hook_free t;
-        idx : hook_free t;
-        value : hook_free t;
-      }
-        -> _ desc
+    | Get : hook_free t desc_get -> _ desc
+    | Set : hook_free t desc_set -> _ desc
+
+  and 'e desc_cond = { pred : 'e; con : 'e; alt : 'e }
+  and 'body desc_fn = { self : Id.t option; param : Id.t; body : 'body }
+  and 'e desc_app = { fn : 'e; arg : 'e }
+  and ('bound, 'body) desc_let = { id : Id.t; bound : 'bound; body : 'body }
+
+  and ('init, 'body) desc_stt = {
+    label : Label.t;
+    stt : Id.t;
+    set : Id.t;
+    init : 'init;
+    body : 'body;
+  }
+
+  and 'e desc_uop = { op : uop; arg : 'e }
+  and 'e desc_bop = { op : bop; left : 'e; right : 'e }
+  and 'e desc_get = { obj : 'e; idx : 'e }
+  and 'e desc_set = { obj : 'e; idx : 'e; value : 'e }
 
   type hook_free_t = hook_free t
   type hook_full_t = hook_full t
@@ -153,18 +154,27 @@ module Expr = struct
     | (Set _ as e) ->
         mk e
 
-  let x_seq ((e1, e2) : some_expr * some_expr) ~loc : some_expr =
+  let x_loc_start (e : some_expr) : Lexing.position =
+    let (Ex { loc; _ }) = e in
+    loc.loc_start
+
+  let x_loc_end (e : some_expr) : Lexing.position =
+    let (Ex { loc; _ }) = e in
+    loc.loc_end
+
+  let x_seq ?(loc = Location.none) ((e1, e2) : some_expr * some_expr) :
+      some_expr =
     match (hook_free e1, hook_free e2) with
     | Some e1, Some e2 -> Ex (mk ~loc (Seq (e1, e2)))
     | _ -> Ex (mk ~loc (Seq (hook_full e1, hook_full e2)))
 
-  let x_let ~id ~(bound : some_expr) ~(body : some_expr) ~loc : some_expr =
+  let x_let ?(loc = Location.none) { id; bound; body } : some_expr =
     let bound = hook_free_exn bound in
     match hook_free body with
     | Some body -> Ex (mk ~loc (Let { id; bound; body }))
     | _ -> Ex (mk ~loc (Let { id; bound; body = hook_full body }))
 
-  let x_stt ~label ~stt ~set ~init ~body ~loc : some_expr =
+  let x_stt ?(loc = Location.none) { label; stt; set; init; body } : some_expr =
     Ex
       (mk ~loc
          (Stt
@@ -176,9 +186,10 @@ module Expr = struct
               body = hook_full body;
             }))
 
-  let x_eff ~e ~loc : some_expr = Ex (mk ~loc (Eff (hook_free_exn e)))
+  let x_eff ?(loc = Location.none) e : some_expr =
+    Ex (mk ~loc (Eff (hook_free_exn e)))
 
-  let x_cond ~pred ~con ~alt ~loc : some_expr =
+  let x_cond ?(loc = Location.none) { pred; con; alt } : some_expr =
     Ex
       (mk ~loc
          (Cond
@@ -188,10 +199,10 @@ module Expr = struct
               alt = hook_free_exn alt;
             }))
 
-  let x_alloc ~loc : some_expr = Ex (mk ~loc Alloc)
-  let x_var id ~loc : some_expr = Ex (mk ~loc (Var id))
+  let x_alloc ?(loc = Location.none) () : some_expr = Ex (mk ~loc Alloc)
+  let x_var ?(loc = Location.none) id : some_expr = Ex (mk ~loc (Var id))
 
-  let x_set ~obj ~idx ~value ~loc : some_expr =
+  let x_set ?(loc = Location.none) { obj; idx; value } : some_expr =
     Ex
       (mk ~loc
          (Set
@@ -201,29 +212,36 @@ module Expr = struct
               value = hook_free_exn value;
             }))
 
-  let x_get ~obj ~idx ~loc : some_expr =
+  let x_get ?(loc = Location.none) { obj; idx } : some_expr =
     Ex (mk ~loc (Get { obj = hook_free_exn obj; idx = hook_free_exn idx }))
 
-  let x_const_string s ~loc : some_expr = Ex (mk ~loc (Const (String s)))
-  let x_const_unit ~loc : some_expr = Ex (mk ~loc (Const Unit))
-  let x_const_bool b ~loc : some_expr = Ex (mk ~loc (Const (Bool b)))
-  let x_const_int i ~loc : some_expr = Ex (mk ~loc (Const (Int i)))
+  let x_const_string ?(loc = Location.none) s : some_expr =
+    Ex (mk ~loc (Const (String s)))
 
-  let x_bop ~op ~left ~right ~loc : some_expr =
+  let x_const_unit ?(loc = Location.none) () : some_expr =
+    Ex (mk ~loc (Const Unit))
+
+  let x_const_bool ?(loc = Location.none) b : some_expr =
+    Ex (mk ~loc (Const (Bool b)))
+
+  let x_const_int ?(loc = Location.none) i : some_expr =
+    Ex (mk ~loc (Const (Int i)))
+
+  let x_bop ?(loc = Location.none) { op; left; right } : some_expr =
     Ex
       (mk ~loc
          (Bop { op; left = hook_free_exn left; right = hook_free_exn right }))
 
-  let x_uop ~op ~arg ~loc : some_expr =
+  let x_uop ?(loc = Location.none) { op; arg } : some_expr =
     Ex (mk ~loc (Uop { op; arg = hook_free_exn arg }))
 
-  let x_app ~fn ~arg ~loc : some_expr =
+  let x_app ?(loc = Location.none) { fn; arg } : some_expr =
     Ex (mk ~loc (App { fn = hook_free_exn fn; arg = hook_free_exn arg }))
 
-  let x_fn ~self ~param ~body ~loc : some_expr =
+  let x_fn ?(loc = Location.none) { self; param; body } : some_expr =
     Ex (mk ~loc (Fn { self; param; body = hook_free_exn body }))
 
-  let x_view es ~loc : some_expr =
+  let x_view ?(loc = Location.none) es : some_expr =
     Ex (mk ~loc (View (List.map ~f:hook_free_exn es)))
 
   let string_of_uop = function Not -> "not" | Uplus -> "+" | Uminus -> "-"
