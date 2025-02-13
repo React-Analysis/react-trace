@@ -9,7 +9,7 @@ $(TARGET_JS):
 	$(DUNE) build --profile=prod
 
 $(OUTPUT_JS): $(TARGET_JS)
-	$(SED) 's/node://g' $(TARGET_JS) >$(OUTPUT_JS)
+	$(SED) -E 's/(^|[^[:alnum:]_])node:/\1/g' $(TARGET_JS) >$(OUTPUT_JS)
 
 clean:
 	rm -f $(OUTPUT_JS)
