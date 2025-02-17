@@ -291,6 +291,15 @@ let rec eval_mult : type a. ?re_render:int -> a Expr.t -> value =
       perform
         (Checkpoint
            { msg = "Will retry"; checkpoint = Retry_start (re_render, path) });
+      let ({ part_view; _ } as ent) = perform (Lookup_ent path) in
+      (match part_view with
+      | Root -> assert false
+      | Node node ->
+          perform
+            (Update_ent
+               ( path,
+                 { ent with part_view = Node { node with eff_q = Job_q.empty } }
+               )));
       ptph_h ~ptph:(path, P_retry) (eval_mult ~re_render) expr
   | Idle | Update -> v
 
